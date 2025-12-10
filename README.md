@@ -62,13 +62,17 @@ This automatically:
 ### Updating the Plugin
 
 ```bash
-# Update marketplace to fetch latest changes
-/plugin marketplace update mattstvartak
+# One-liner to update the plugin
+/plugin uninstall claude-rag@mattstvartak && /plugin install claude-rag@mattstvartak
+```
 
-# Reinstall to apply updates
+Or step by step:
+```bash
 /plugin uninstall claude-rag@mattstvartak
 /plugin install claude-rag@mattstvartak
 ```
+
+Then restart Claude Code to reload the MCP server.
 
 ## Manual Installation
 
