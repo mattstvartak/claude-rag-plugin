@@ -15,7 +15,7 @@ docker start chromadb 2>/dev/null || true
 
 2. Wait for ChromaDB to be ready:
 ```bash
-for i in {1..30}; do curl -s http://localhost:8000/api/v1/heartbeat && break || sleep 1; done
+for i in {1..30}; do curl -s http://localhost:8000/api/v2/heartbeat && break || sleep 1; done
 ```
 
 3. Install plugin dependencies and build:
