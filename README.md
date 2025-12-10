@@ -17,7 +17,17 @@ Index your codebase once, then let Claude automatically retrieve relevant contex
 The easiest way to install - everything is set up automatically:
 
 ```bash
-/plugin marketplace add https://github.com/mattstvartak/claude-rag-plugin.git
+# Step 1: Add the marketplace
+/plugin marketplace add mattstvartak/claude-rag-plugin
+
+# Step 2: Install the plugin
+/plugin install claude-rag@mattstvartak
+```
+
+Or use the interactive menu:
+```bash
+/plugin
+# Then select "Browse Plugins" to find and install claude-rag
 ```
 
 This automatically:
