@@ -14,8 +14,13 @@ echo "📦 Installing dependencies..."
 cd "$PLUGIN_DIR"
 # Clear any stale lock files that might cause conflicts
 rm -rf node_modules/.package-lock.json 2>/dev/null
-npm install --silent 2>/dev/null || npm install --no-package-lock --silent
-npm run build --silent
+# Run npm install (show output if it fails)
+if ! npm install 2>&1 | tail -5; then
+    echo "Retrying with --no-package-lock..."
+    npm install --no-package-lock
+fi
+echo "📦 Building..."
+npm run build
 
 # Step 2: Start ChromaDB via Docker
 echo "🐳 Setting up ChromaDB..."
