@@ -1,96 +1,77 @@
 # Claude RAG Plugin
 
-A production-ready Claude Code plugin that combines ChromaDB vector embeddings with intelligent document retrieval and Multi-Agent Framework (MAF) orchestration for context-aware development assistance.
+Index your codebase once, then let Claude automatically retrieve relevant context before making changes. Reduces API costs by providing targeted context instead of reading entire files.
 
 ## Features
 
+- **One-Click Install**: Automatic setup via Claude Code marketplace
+- **No API Keys Required**: Uses ChromaDB's built-in embeddings by default
 - **ChromaDB Vector Store**: Efficient semantic search with persistent embeddings
 - **Intelligent Chunking**: Language-aware code chunking that preserves logical boundaries
 - **Hybrid Search**: Combines semantic and keyword search with reciprocal rank fusion
 - **Multi-Agent Framework**: Orchestrator, Retriever, Analyzer, and Synthesizer agents
-- **MCP Integration**: Full Model Context Protocol support for Claude Code
 - **Auto-Context**: Automatically retrieves relevant code before making changes
 
-## Installation for Claude Code CLI
+## Installation via Claude Code Marketplace (Recommended)
 
-### Option 1: Install from npm (Recommended)
+The easiest way to install - everything is set up automatically:
 
 ```bash
-# Install globally
-npm install -g claude-rag-plugin
-
-# Or install locally in your project
-npm install claude-rag-plugin
+/plugin marketplace add https://github.com/mattstvartak/claude-rag-plugin.git
 ```
 
-### Option 2: Install from Source
+This automatically:
+- Installs all dependencies
+- Starts ChromaDB via Docker
+- Registers the MCP server with Claude Code
+
+**Requirements**: Docker must be installed on your system.
+
+## Manual Installation
+
+If you prefer to install manually:
+
+### Option 1: Install from Source
 
 ```bash
-# Clone and build
-git clone https://github.com/yourusername/claude-rag-plugin.git
+# Clone the repository
+git clone https://github.com/mattstvartak/claude-rag-plugin.git
+cd claude-rag-plugin
+
+# Run the setup script (handles everything)
+./scripts/setup.sh
+```
+
+### Option 2: Step-by-Step Manual Setup
+
+```bash
+# 1. Clone and build
+git clone https://github.com/mattstvartak/claude-rag-plugin.git
 cd claude-rag-plugin
 npm install
 npm run build
-npm link  # Makes it available globally
-```
 
-## Quick Setup
+# 2. Start ChromaDB
+docker run -d --name chromadb -p 8000:8000 chromadb/chroma
 
-### 1. Start ChromaDB
-
-```bash
-# Using Docker (recommended)
-docker run -d -p 8000:8000 chromadb/chroma
-
-# Or install locally
-pip install chromadb
-chroma run --host localhost --port 8000
-```
-
-### 2. Add to Claude Code
-
-Run this command to add the MCP server to Claude Code:
-
-```bash
-# If installed globally via npm
-claude mcp add claude-rag -- npx claude-rag serve
-
-# If installed from source
+# 3. Register MCP server with Claude Code
 claude mcp add claude-rag -- node /path/to/claude-rag-plugin/dist/mcp/server.js
 ```
 
-Or manually edit `~/.claude/settings.json`:
+### (Optional) OpenAI Embeddings
 
-```json
-{
-  "mcpServers": {
-    "claude-rag": {
-      "command": "npx",
-      "args": ["claude-rag", "serve"],
-      "env": {
-        "CHROMADB_HOST": "localhost",
-        "CHROMADB_PORT": "8000"
-      }
-    }
-  }
-}
-```
-
-### 3. (Optional) Set Environment Variables
-
-Only needed if you want higher-quality OpenAI embeddings:
+For higher-quality embeddings, set your OpenAI API key:
 
 ```bash
-# Optional - for better embeddings
 export OPENAI_API_KEY="your-openai-key"
 ```
 
-### 4. Index Your Codebase
+## Quick Start
 
-From within Claude Code CLI, use the tool:
+After installation, index your codebase:
 
 ```
-Use rag_index to index /path/to/your/codebase
+/rag-index /path/to/your/codebase
 ```
 
 Or from terminal:
