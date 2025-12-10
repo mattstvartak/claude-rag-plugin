@@ -1,0 +1,385 @@
+import { getConfigValue } from '../core/config.js';
+import { DocumentChunk, DocumentMetadata } from '../core/types.js';
+import { createChildLogger } from '../utils/logger.js';
+import { generateDocumentId, hashContent } from '../utils/hashing.js';
+
+const logger = createChildLogger('chunker');
+
+interface ChunkOptions {
+  chunkSize?: number;
+  chunkOverlap?: number;
+  preserveCodeBlocks?: boolean;
+  preserveMarkdownStructure?: boolean;
+}
+
+interface LineInfo {
+  content: string;
+  lineNumber: number;
+}
+
+export class DocumentChunker {
+  private chunkSize: number;
+  private chunkOverlap: number;
+
+  constructor(options?: ChunkOptions) {
+    const ingestionConfig = getConfigValue('ingestion');
+    this.chunkSize = options?.chunkSize ?? ingestionConfig.chunkSize;
+    this.chunkOverlap = options?.chunkOverlap ?? ingestionConfig.chunkOverlap;
+  }
+
+  chunkDocument(
+    content: string,
+    filePath: string,
+    fileName: string,
+    fileType: string,
+    projectName?: string
+  ): DocumentChunk[] {
+    const language = this.detectLanguage(fileType);
+    const chunks: DocumentChunk[] = [];
+
+    // Choose chunking strategy based on file type
+    let rawChunks: { content: string; startLine: number; endLine: number }[];
+
+    if (this.isCodeFile(fileType)) {
+      rawChunks = this.chunkCode(content, language);
+    } else if (this.isMarkdownFile(fileType)) {
+      rawChunks = this.chunkMarkdown(content);
+    } else {
+      rawChunks = this.chunkText(content);
+    }
+
+    const now = new Date().toISOString();
+
+    rawChunks.forEach((chunk, index) => {
+      const metadata: DocumentMetadata = {
+        filePath,
+        fileName,
+        fileType,
+        language,
+        chunkIndex: index,
+        totalChunks: rawChunks.length,
+        startLine: chunk.startLine,
+        endLine: chunk.endLine,
+        createdAt: now,
+        updatedAt: now,
+        hash: hashContent(chunk.content),
+        projectName,
+      };
+
+      chunks.push({
+        id: generateDocumentId(filePath, index),
+        content: chunk.content,
+        metadata,
+        tokenCount: this.estimateTokenCount(chunk.content),
+      });
+    });
+
+    logger.debug('Document chunked', {
+      filePath,
+      totalChunks: chunks.length,
+    });
+
+    return chunks;
+  }
+
+  private chunkCode(
+    content: string,
+    language?: string
+  ): { content: string; startLine: number; endLine: number }[] {
+    const lines = content.split('\n');
+    const chunks: { content: string; startLine: number; endLine: number }[] = [];
+
+    // Try to split on logical boundaries (functions, classes, etc.)
+    const boundaries = this.findCodeBoundaries(lines, language);
+
+    if (boundaries.length > 0) {
+      let currentChunk: LineInfo[] = [];
+      let currentSize = 0;
+      let chunkStartLine = 1;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        const lineSize = line.length + 1; // +1 for newline
+
+        // Check if this is a boundary and we have content
+        if (boundaries.includes(i) && currentChunk.length > 0) {
+          // If current chunk is big enough, save it
+          if (currentSize >= this.chunkSize * 0.5) {
+            chunks.push({
+              content: currentChunk.map((l) => l.content).join('\n'),
+              startLine: chunkStartLine,
+              endLine: currentChunk[currentChunk.length - 1]!.lineNumber,
+            });
+
+            // Start new chunk with overlap
+            const overlapLines = this.getOverlapLines(currentChunk);
+            currentChunk = overlapLines;
+            currentSize = overlapLines.reduce((sum, l) => sum + l.content.length + 1, 0);
+            chunkStartLine = overlapLines.length > 0 ? overlapLines[0]!.lineNumber : i + 1;
+          }
+        }
+
+        currentChunk.push({ content: line, lineNumber: i + 1 });
+        currentSize += lineSize;
+
+        // Force split if chunk is too large
+        if (currentSize >= this.chunkSize) {
+          chunks.push({
+            content: currentChunk.map((l) => l.content).join('\n'),
+            startLine: chunkStartLine,
+            endLine: currentChunk[currentChunk.length - 1]!.lineNumber,
+          });
+
+          const overlapLines = this.getOverlapLines(currentChunk);
+          currentChunk = overlapLines;
+          currentSize = overlapLines.reduce((sum, l) => sum + l.content.length + 1, 0);
+          chunkStartLine = overlapLines.length > 0 ? overlapLines[0]!.lineNumber : i + 2;
+        }
+      }
+
+      // Don't forget the last chunk
+      if (currentChunk.length > 0) {
+        chunks.push({
+          content: currentChunk.map((l) => l.content).join('\n'),
+          startLine: chunkStartLine,
+          endLine: currentChunk[currentChunk.length - 1]!.lineNumber,
+        });
+      }
+    } else {
+      // Fall back to simple text chunking
+      return this.chunkText(content);
+    }
+
+    return chunks;
+  }
+
+  private findCodeBoundaries(lines: string[], language?: string): number[] {
+    const boundaries: number[] = [];
+
+    // Common patterns for function/class definitions
+    const patterns: RegExp[] = [
+      // JavaScript/TypeScript
+      /^(export\s+)?(async\s+)?function\s+\w+/,
+      /^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s+)?\(/,
+      /^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s+)?function/,
+      /^(export\s+)?class\s+\w+/,
+      /^(export\s+)?interface\s+\w+/,
+      /^(export\s+)?type\s+\w+/,
+      /^(export\s+)?enum\s+\w+/,
+      // Python
+      /^(async\s+)?def\s+\w+/,
+      /^class\s+\w+/,
+      // Go
+      /^func\s+(\(\w+\s+\*?\w+\)\s+)?\w+/,
+      /^type\s+\w+\s+(struct|interface)/,
+      // Rust
+      /^(pub\s+)?(async\s+)?fn\s+\w+/,
+      /^(pub\s+)?struct\s+\w+/,
+      /^(pub\s+)?impl\s+/,
+      /^(pub\s+)?trait\s+\w+/,
+      // Java
+      /^(public|private|protected)?\s*(static\s+)?(class|interface|enum)\s+\w+/,
+      /^(public|private|protected)?\s*(static\s+)?(\w+\s+)+\w+\s*\(/,
+    ];
+
+    lines.forEach((line, index) => {
+      const trimmedLine = line.trim();
+      for (const pattern of patterns) {
+        if (pattern.test(trimmedLine)) {
+          boundaries.push(index);
+          break;
+        }
+      }
+    });
+
+    return boundaries;
+  }
+
+  private chunkMarkdown(
+    content: string
+  ): { content: string; startLine: number; endLine: number }[] {
+    const lines = content.split('\n');
+    const chunks: { content: string; startLine: number; endLine: number }[] = [];
+
+    let currentChunk: LineInfo[] = [];
+    let currentSize = 0;
+    let chunkStartLine = 1;
+    let inCodeBlock = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      const lineSize = line.length + 1;
+
+      // Track code blocks
+      if (line.trim().startsWith('```')) {
+        inCodeBlock = !inCodeBlock;
+      }
+
+      // Check for heading (potential split point)
+      const isHeading = /^#{1,6}\s/.test(line) && !inCodeBlock;
+
+      if (isHeading && currentChunk.length > 0 && currentSize >= this.chunkSize * 0.3) {
+        chunks.push({
+          content: currentChunk.map((l) => l.content).join('\n'),
+          startLine: chunkStartLine,
+          endLine: currentChunk[currentChunk.length - 1]!.lineNumber,
+        });
+
+        currentChunk = [];
+        currentSize = 0;
+        chunkStartLine = i + 1;
+      }
+
+      currentChunk.push({ content: line, lineNumber: i + 1 });
+      currentSize += lineSize;
+
+      // Force split if chunk is too large (but not in code block)
+      if (currentSize >= this.chunkSize && !inCodeBlock) {
+        chunks.push({
+          content: currentChunk.map((l) => l.content).join('\n'),
+          startLine: chunkStartLine,
+          endLine: currentChunk[currentChunk.length - 1]!.lineNumber,
+        });
+
+        const overlapLines = this.getOverlapLines(currentChunk);
+        currentChunk = overlapLines;
+        currentSize = overlapLines.reduce((sum, l) => sum + l.content.length + 1, 0);
+        chunkStartLine = overlapLines.length > 0 ? overlapLines[0]!.lineNumber : i + 2;
+      }
+    }
+
+    if (currentChunk.length > 0) {
+      chunks.push({
+        content: currentChunk.map((l) => l.content).join('\n'),
+        startLine: chunkStartLine,
+        endLine: currentChunk[currentChunk.length - 1]!.lineNumber,
+      });
+    }
+
+    return chunks;
+  }
+
+  private chunkText(
+    content: string
+  ): { content: string; startLine: number; endLine: number }[] {
+    const lines = content.split('\n');
+    const chunks: { content: string; startLine: number; endLine: number }[] = [];
+
+    let currentChunk: LineInfo[] = [];
+    let currentSize = 0;
+    let chunkStartLine = 1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      const lineSize = line.length + 1;
+
+      currentChunk.push({ content: line, lineNumber: i + 1 });
+      currentSize += lineSize;
+
+      if (currentSize >= this.chunkSize) {
+        chunks.push({
+          content: currentChunk.map((l) => l.content).join('\n'),
+          startLine: chunkStartLine,
+          endLine: currentChunk[currentChunk.length - 1]!.lineNumber,
+        });
+
+        const overlapLines = this.getOverlapLines(currentChunk);
+        currentChunk = overlapLines;
+        currentSize = overlapLines.reduce((sum, l) => sum + l.content.length + 1, 0);
+        chunkStartLine = overlapLines.length > 0 ? overlapLines[0]!.lineNumber : i + 2;
+      }
+    }
+
+    if (currentChunk.length > 0) {
+      chunks.push({
+        content: currentChunk.map((l) => l.content).join('\n'),
+        startLine: chunkStartLine,
+        endLine: currentChunk[currentChunk.length - 1]!.lineNumber,
+      });
+    }
+
+    return chunks;
+  }
+
+  private getOverlapLines(chunk: LineInfo[]): LineInfo[] {
+    if (this.chunkOverlap <= 0) return [];
+
+    let overlapSize = 0;
+    const overlapLines: LineInfo[] = [];
+
+    for (let i = chunk.length - 1; i >= 0; i--) {
+      const line = chunk[i]!;
+      const lineSize = line.content.length + 1;
+
+      if (overlapSize + lineSize > this.chunkOverlap) break;
+
+      overlapLines.unshift(line);
+      overlapSize += lineSize;
+    }
+
+    return overlapLines;
+  }
+
+  private detectLanguage(fileType: string): string | undefined {
+    const languageMap: Record<string, string> = {
+      '.ts': 'typescript',
+      '.tsx': 'typescript',
+      '.js': 'javascript',
+      '.jsx': 'javascript',
+      '.py': 'python',
+      '.go': 'go',
+      '.rs': 'rust',
+      '.java': 'java',
+      '.rb': 'ruby',
+      '.php': 'php',
+      '.cs': 'csharp',
+      '.cpp': 'cpp',
+      '.c': 'c',
+      '.h': 'c',
+      '.hpp': 'cpp',
+      '.swift': 'swift',
+      '.kt': 'kotlin',
+      '.scala': 'scala',
+      '.sql': 'sql',
+      '.sh': 'bash',
+      '.bash': 'bash',
+      '.zsh': 'bash',
+      '.md': 'markdown',
+      '.mdx': 'markdown',
+      '.html': 'html',
+      '.css': 'css',
+      '.scss': 'scss',
+      '.sass': 'sass',
+      '.less': 'less',
+      '.json': 'json',
+      '.yaml': 'yaml',
+      '.yml': 'yaml',
+      '.toml': 'toml',
+      '.xml': 'xml',
+    };
+
+    return languageMap[fileType.toLowerCase()];
+  }
+
+  private isCodeFile(fileType: string): boolean {
+    const codeExtensions = [
+      '.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java',
+      '.rb', '.php', '.cs', '.cpp', '.c', '.h', '.hpp', '.swift',
+      '.kt', '.scala', '.sh', '.bash', '.zsh',
+    ];
+    return codeExtensions.includes(fileType.toLowerCase());
+  }
+
+  private isMarkdownFile(fileType: string): boolean {
+    return ['.md', '.mdx'].includes(fileType.toLowerCase());
+  }
+
+  private estimateTokenCount(text: string): number {
+    // Rough estimation: ~4 characters per token
+    return Math.ceil(text.length / 4);
+  }
+}
+
+export const createChunker = (options?: ChunkOptions): DocumentChunker => {
+  return new DocumentChunker(options);
+};

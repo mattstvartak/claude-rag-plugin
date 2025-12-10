@@ -1,0 +1,84 @@
+{
+  "chromadb": {
+    "host": "localhost",
+    "port": 8000,
+    "collection": "claude_rag_documents",
+    "embeddingFunction": "openai",
+    "persistDirectory": "./.chromadb"
+  },
+  "embeddings": {
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "dimensions": 1536,
+    "batchSize": 100,
+    "maxRetries": 3,
+    "retryDelay": 1000
+  },
+  "retrieval": {
+    "topK": 10,
+    "minScore": 0.7,
+    "reranking": {
+      "enabled": true,
+      "model": "claude-3-haiku-20240307",
+      "topN": 5
+    },
+    "hybridSearch": {
+      "enabled": true,
+      "keywordWeight": 0.3,
+      "semanticWeight": 0.7
+    }
+  },
+  "ingestion": {
+    "chunkSize": 1000,
+    "chunkOverlap": 200,
+    "supportedExtensions": [
+      ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java",
+      ".md", ".mdx", ".txt", ".json", ".yaml", ".yml", ".toml",
+      ".html", ".css", ".scss", ".sql", ".sh", ".dockerfile"
+    ],
+    "excludePatterns": [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/.git/**",
+      "**/coverage/**",
+      "**/*.min.js",
+      "**/*.bundle.js"
+    ],
+    "maxFileSize": 1048576,
+    "watchMode": false
+  },
+  "agents": {
+    "orchestrator": {
+      "model": "claude-sonnet-4-20250514",
+      "maxIterations": 10,
+      "temperature": 0.1
+    },
+    "retriever": {
+      "model": "claude-3-haiku-20240307",
+      "maxResults": 20
+    },
+    "analyzer": {
+      "model": "claude-sonnet-4-20250514",
+      "contextWindow": 100000
+    },
+    "synthesizer": {
+      "model": "claude-sonnet-4-20250514",
+      "maxTokens": 4096
+    }
+  },
+  "cache": {
+    "enabled": true,
+    "maxSize": 1000,
+    "ttl": 3600000
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "file": "./logs/claude-rag.log"
+  },
+  "mcp": {
+    "serverName": "claude-rag",
+    "version": "1.0.0"
+  }
+}

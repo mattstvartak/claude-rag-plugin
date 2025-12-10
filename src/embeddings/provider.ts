@@ -1,0 +1,194 @@
+import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
+import PQueue from 'p-queue';
+import pRetry from 'p-retry';
+import { getConfigValue } from '../core/config.js';
+import { EmbeddingRequest, EmbeddingResponse } from '../core/types.js';
+import { createChildLogger } from '../utils/logger.js';
+import { getEmbeddingCache } from '../utils/cache.js';
+import { hashContent } from '../utils/hashing.js';
+
+const logger = createChildLogger('embeddings');
+
+export interface EmbeddingProvider {
+  generateEmbeddings(request: EmbeddingRequest): Promise<EmbeddingResponse>;
+  generateEmbedding(text: string): Promise<number[]>;
+}
+
+export class OpenAIEmbeddingProvider implements EmbeddingProvider {
+  private client: OpenAI;
+  private model: string;
+  private dimensions: number;
+  private queue: PQueue;
+  private maxRetries: number;
+  private retryDelay: number;
+  private cache = getEmbeddingCache();
+
+  constructor() {
+    const embeddingConfig = getConfigValue('embeddings');
+
+    if (!process.env['OPENAI_API_KEY']) {
+      throw new Error('OPENAI_API_KEY environment variable is required');
+    }
+
+    this.client = new OpenAI({
+      apiKey: process.env['OPENAI_API_KEY'],
+    });
+
+    this.model = embeddingConfig.model;
+    this.dimensions = embeddingConfig.dimensions;
+    this.maxRetries = embeddingConfig.maxRetries;
+    this.retryDelay = embeddingConfig.retryDelay;
+
+    // Rate limiting queue
+    this.queue = new PQueue({
+      concurrency: 5,
+      intervalCap: 100,
+      interval: 60000, // 100 requests per minute
+    });
+  }
+
+  async generateEmbeddings(request: EmbeddingRequest): Promise<EmbeddingResponse> {
+    const model = request.model || this.model;
+    const embeddings: number[][] = [];
+    let totalPromptTokens = 0;
+    let totalTokens = 0;
+
+    // Process in batches
+    const batchSize = getConfigValue('embeddings').batchSize;
+    const batches: string[][] = [];
+
+    for (let i = 0; i < request.texts.length; i += batchSize) {
+      batches.push(request.texts.slice(i, i + batchSize));
+    }
+
+    logger.info('Generating embeddings', {
+      totalTexts: request.texts.length,
+      batches: batches.length,
+    });
+
+    for (const batch of batches) {
+      const batchEmbeddings = await this.processBatch(batch, model);
+      embeddings.push(...batchEmbeddings.embeddings);
+      totalPromptTokens += batchEmbeddings.usage.promptTokens;
+      totalTokens += batchEmbeddings.usage.totalTokens;
+    }
+
+    return {
+      embeddings,
+      model,
+      usage: {
+        promptTokens: totalPromptTokens,
+        totalTokens,
+      },
+    };
+  }
+
+  private async processBatch(
+    texts: string[],
+    model: string
+  ): Promise<EmbeddingResponse> {
+    // Check cache first
+    const cachedEmbeddings: (number[] | null)[] = texts.map((text) => {
+      const cacheKey = `${model}:${hashContent(text)}`;
+      return this.cache.get(cacheKey) || null;
+    });
+
+    const uncachedTexts: string[] = [];
+    const uncachedIndices: number[] = [];
+
+    cachedEmbeddings.forEach((embedding, index) => {
+      if (embedding === null) {
+        uncachedTexts.push(texts[index]!);
+        uncachedIndices.push(index);
+      }
+    });
+
+    if (uncachedTexts.length === 0) {
+      logger.debug('All embeddings found in cache', { count: texts.length });
+      return {
+        embeddings: cachedEmbeddings as number[][],
+        model,
+        usage: { promptTokens: 0, totalTokens: 0 },
+      };
+    }
+
+    // Generate embeddings for uncached texts
+    const response = await this.queue.add(() =>
+      pRetry(
+        async () => {
+          return await this.client.embeddings.create({
+            model,
+            input: uncachedTexts,
+            dimensions: this.dimensions,
+          });
+        },
+        {
+          retries: this.maxRetries,
+          minTimeout: this.retryDelay,
+          onFailedAttempt: (error) => {
+            logger.warn('Embedding request failed, retrying', {
+              attempt: error.attemptNumber,
+              retriesLeft: error.retriesLeft,
+            });
+          },
+        }
+      )
+    );
+
+    if (!response) {
+      throw new Error('Failed to generate embeddings');
+    }
+
+    // Update cache and merge results
+    const embeddings = [...cachedEmbeddings] as number[][];
+
+    response.data.forEach((item, i) => {
+      const originalIndex = uncachedIndices[i]!;
+      const text = uncachedTexts[i]!;
+      const embedding = item.embedding;
+
+      embeddings[originalIndex] = embedding;
+
+      // Cache the embedding
+      const cacheKey = `${model}:${hashContent(text)}`;
+      this.cache.set(cacheKey, embedding);
+    });
+
+    return {
+      embeddings,
+      model,
+      usage: {
+        promptTokens: response.usage.prompt_tokens,
+        totalTokens: response.usage.total_tokens,
+      },
+    };
+  }
+
+  async generateEmbedding(text: string): Promise<number[]> {
+    const response = await this.generateEmbeddings({ texts: [text] });
+    return response.embeddings[0]!;
+  }
+}
+
+// Factory function
+export function createEmbeddingProvider(): EmbeddingProvider {
+  const provider = getConfigValue('embeddings').provider;
+
+  switch (provider) {
+    case 'openai':
+      return new OpenAIEmbeddingProvider();
+    default:
+      throw new Error(`Unsupported embedding provider: ${provider}`);
+  }
+}
+
+// Singleton instance
+let embeddingProviderInstance: EmbeddingProvider | null = null;
+
+export const getEmbeddingProvider = (): EmbeddingProvider => {
+  if (!embeddingProviderInstance) {
+    embeddingProviderInstance = createEmbeddingProvider();
+  }
+  return embeddingProviderInstance;
+};
