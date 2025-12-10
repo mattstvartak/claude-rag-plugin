@@ -1,0 +1,13 @@
+{
+  "name": "claude-rag-marketplace",
+  "owner": {
+    "name": "mattstvartak"
+  },
+  "plugins": [
+    {
+      "name": "claude-rag",
+      "source": ".",
+      "description": "Index your codebase once, then let Claude automatically retrieve relevant context before making changes. Reduces API costs by providing targeted context."
+    }
+  ]
+}

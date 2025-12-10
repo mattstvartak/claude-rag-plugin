@@ -1,0 +1,9 @@
+{
+  "hooks": [
+    {
+      "event": "on_install",
+      "command": "bash ./scripts/setup.sh",
+      "description": "Install dependencies, start ChromaDB, and register MCP server automatically"
+    }
+  ]
+}
