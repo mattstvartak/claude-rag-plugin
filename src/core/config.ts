@@ -1,9 +1,14 @@
 import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { Config, ConfigSchema } from './types.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
+
+// ESM equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const DEFAULT_CONFIG_PATH = join(process.cwd(), 'config', 'default.json');
 const USER_CONFIG_PATH = join(process.cwd(), '.claude-rag.json');
