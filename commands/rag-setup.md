@@ -1,31 +1,29 @@
 ---
-description: Automatically set up the RAG system - starts ChromaDB and configures everything
+description: Start ChromaDB if not running and verify the RAG system is ready
 allowed-tools: ["Bash"]
 ---
 
-# RAG Auto-Setup
+# RAG Setup Check
 
-Set up the RAG system automatically. Run these commands in sequence:
+This command ensures ChromaDB is running and the RAG system is ready.
 
-1. First, check if Docker is available and start ChromaDB:
+**Note**: If you installed via the plugin marketplace, setup should already be complete. This command is for troubleshooting or manual setup.
+
+## Steps:
+
+1. Check if Docker is running and start ChromaDB:
 ```bash
-docker ps -a | grep chromadb || docker run -d --name chromadb -p 8000:8000 chromadb/chroma
-docker start chromadb 2>/dev/null || true
+docker info > /dev/null 2>&1 && (docker ps | grep -q chromadb || (docker ps -a | grep -q chromadb && docker start chromadb || docker run -d --name chromadb -p 8000:8000 chromadb/chroma)) || echo "Docker is not running. Please start Docker Desktop first."
 ```
 
-2. Wait for ChromaDB to be ready:
+2. Wait for ChromaDB to be ready (up to 30 seconds):
 ```bash
-for i in {1..30}; do curl -s http://localhost:8000/api/v2/heartbeat && break || sleep 1; done
+for i in {1..30}; do curl -s http://localhost:8000/api/v2/heartbeat > /dev/null 2>&1 && echo "ChromaDB is ready!" && break || sleep 1; done
 ```
 
-3. Install plugin dependencies and build:
+3. Verify the setup:
 ```bash
-cd "$(dirname "$(dirname "$0")")" && rm -rf node_modules/.package-lock.json package-lock.json 2>/dev/null; npm install --no-package-lock && npm run build
+curl -s http://localhost:8000/api/v2/heartbeat && echo "RAG system is ready! You can now use /rag-index to index your codebase."
 ```
 
-4. Add MCP server to Claude Code settings:
-```bash
-claude mcp add claude-rag -- node "$(pwd)/dist/mcp/server.js"
-```
-
-Report success and tell the user they can now use `/rag-index` to index their codebase.
+If ChromaDB is not responding, make sure Docker Desktop is running and try again.
