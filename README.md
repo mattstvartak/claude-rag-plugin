@@ -55,7 +55,20 @@ This automatically:
 - Starts ChromaDB via Docker
 - Registers the MCP server with Claude Code
 
-**Requirements**: Docker must be installed on your system.
+**Requirements**: Docker must be installed and running on your system.
+
+**Important**: After installation, restart Claude Code to load the MCP server. Then verify with `/mcp` - you should see `claude-rag` in the list.
+
+### Updating the Plugin
+
+```bash
+# Update marketplace to fetch latest changes
+/plugin marketplace update mattstvartak
+
+# Reinstall to apply updates
+/plugin uninstall claude-rag@mattstvartak
+/plugin install claude-rag@mattstvartak
+```
 
 ## Manual Installation
 
