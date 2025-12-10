@@ -1,24 +1,26 @@
 ---
-description: Restart the claude-rag MCP server to reload configuration or fix issues
-allowed-tools: ["Bash"]
+description: Instructions for restarting the claude-rag MCP server
+allowed-tools: []
 ---
 
 # Restart RAG MCP Server
 
-This command restarts the claude-rag MCP server.
+MCP servers cannot be restarted from within Claude Code. To restart the claude-rag MCP server:
 
-**Note**: After running this command, you may need to restart Claude Code for the changes to take full effect.
+**Simply restart Claude Code.**
 
-## Steps:
+This will reload all MCP servers including claude-rag.
 
-1. Remove and re-add the MCP server:
-```bash
-claude mcp remove claude-rag 2>/dev/null; claude mcp add claude-rag -- node "$(claude mcp list 2>/dev/null | grep -A1 claude-rag | grep args | sed 's/.*node //' | tr -d '\"' || echo '/Users/matt/.claude/plugins/claude-rag@mattstvartak/dist/mcp/server.js')"
-```
+## If that doesn't work
 
-2. Verify the server is registered:
-```bash
-claude mcp list | grep -A2 claude-rag && echo "MCP server re-registered. Please restart Claude Code to load the updated server."
-```
+1. Exit Claude Code
+2. Run in your terminal:
+   ```bash
+   claude mcp remove claude-rag
+   claude mcp add claude-rag -- node ~/.claude/plugins/claude-rag@mattstvartak/dist/mcp/server.js
+   ```
+3. Start Claude Code again
 
-If the server doesn't appear after restart, try running `/rag-setup` to ensure ChromaDB is running.
+## Verify
+
+After restarting, run `/mcp` to confirm `claude-rag` appears in the server list.
