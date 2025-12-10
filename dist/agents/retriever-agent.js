@@ -1,15 +1,12 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.RetrieverAgent = void 0;
-const base_agent_js_1 = require("./base-agent.js");
-const config_js_1 = require("../core/config.js");
-const retriever_js_1 = require("../retrieval/retriever.js");
-const logger_js_1 = require("../utils/logger.js");
-const logger = (0, logger_js_1.createChildLogger)('retriever-agent');
-class RetrieverAgent extends base_agent_js_1.BaseAgent {
-    retriever = (0, retriever_js_1.getRetriever)();
+import { BaseAgent } from './base-agent.js';
+import { getConfigValue } from '../core/config.js';
+import { getRetriever } from '../retrieval/retriever.js';
+import { createChildLogger } from '../utils/logger.js';
+const logger = createChildLogger('retriever-agent');
+export class RetrieverAgent extends BaseAgent {
+    retriever = getRetriever();
     constructor() {
-        const agentConfig = (0, config_js_1.getConfigValue)('agents').retriever;
+        const agentConfig = getConfigValue('agents').retriever;
         super({
             role: 'retriever',
             model: agentConfig.model,
@@ -79,7 +76,7 @@ Format your response as JSON:
         // Perform retrieval with original query
         const results = await this.retriever.retrieve({
             query: context.query,
-            topK: (0, config_js_1.getConfigValue)('agents').retriever.maxResults,
+            topK: getConfigValue('agents').retriever.maxResults,
         });
         // If results are insufficient, try alternative queries
         let allResults = [...results];
@@ -162,5 +159,4 @@ Format as JSON:
         return this.retriever.retrieve({ query, topK });
     }
 }
-exports.RetrieverAgent = RetrieverAgent;
 //# sourceMappingURL=retriever-agent.js.map

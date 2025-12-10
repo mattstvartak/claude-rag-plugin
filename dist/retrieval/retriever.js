@@ -1,34 +1,28 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.getRetriever = exports.IntelligentRetriever = void 0;
-const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
-const config_js_1 = require("../core/config.js");
-const vector_store_js_1 = require("../core/vector-store.js");
-const logger_js_1 = require("../utils/logger.js");
-const provider_js_1 = require("../embeddings/provider.js");
-const cache_js_1 = require("../utils/cache.js");
-const hashing_js_1 = require("../utils/hashing.js");
-const logger = (0, logger_js_1.createChildLogger)('retriever');
-class IntelligentRetriever {
+import Anthropic from '@anthropic-ai/sdk';
+import { getConfigValue } from '../core/config.js';
+import { getVectorStore } from '../core/vector-store.js';
+import { createChildLogger } from '../utils/logger.js';
+import { getEmbeddingProvider } from '../embeddings/provider.js';
+import { getRetrievalCache } from '../utils/cache.js';
+import { hashContent } from '../utils/hashing.js';
+const logger = createChildLogger('retriever');
+export class IntelligentRetriever {
     anthropic = null;
-    cache = (0, cache_js_1.getRetrievalCache)();
+    cache = getRetrievalCache();
     constructor() {
         if (process.env['ANTHROPIC_API_KEY']) {
-            this.anthropic = new sdk_1.default({
+            this.anthropic = new Anthropic({
                 apiKey: process.env['ANTHROPIC_API_KEY'],
             });
         }
     }
     async retrieve(query) {
-        const retrievalConfig = (0, config_js_1.getConfigValue)('retrieval');
+        const retrievalConfig = getConfigValue('retrieval');
         const topK = query.topK ?? retrievalConfig.topK;
         const minScore = query.minScore ?? retrievalConfig.minScore;
         logger.info('Starting retrieval', { query: query.query, topK, minScore });
         // Check cache
-        const cacheKey = (0, hashing_js_1.hashContent)(JSON.stringify({ query: query.query, topK, filters: query.filters }));
+        const cacheKey = hashContent(JSON.stringify({ query: query.query, topK, filters: query.filters }));
         const cached = this.cache.get(cacheKey);
         if (cached) {
             logger.debug('Retrieval cache hit');
@@ -54,14 +48,14 @@ class IntelligentRetriever {
         return results;
     }
     async semanticSearch(query, topK, filters) {
-        const vectorStore = (0, vector_store_js_1.getVectorStore)();
+        const vectorStore = getVectorStore();
         await vectorStore.initialize();
-        const embeddingProvider = (0, provider_js_1.getEmbeddingProvider)();
+        const embeddingProvider = getEmbeddingProvider();
         const queryEmbedding = await embeddingProvider.generateEmbedding(query);
         return await vectorStore.query(queryEmbedding, topK, filters);
     }
     async hybridSearch(query, topK, filters) {
-        const retrievalConfig = (0, config_js_1.getConfigValue)('retrieval');
+        const retrievalConfig = getConfigValue('retrieval');
         // Semantic search
         const semanticResults = await this.semanticSearch(query, topK * 2, filters);
         // Keyword search (simple approach using content matching)
@@ -77,9 +71,9 @@ class IntelligentRetriever {
     async keywordSearch(query, topK, filters) {
         // For keyword search, we'll use a simple approach:
         // Get more results from semantic search and re-score based on keyword matching
-        const vectorStore = (0, vector_store_js_1.getVectorStore)();
+        const vectorStore = getVectorStore();
         await vectorStore.initialize();
-        const embeddingProvider = (0, provider_js_1.getEmbeddingProvider)();
+        const embeddingProvider = getEmbeddingProvider();
         const queryEmbedding = await embeddingProvider.generateEmbedding(query);
         const results = await vectorStore.query(queryEmbedding, topK * 3, filters);
         // Re-score based on keyword matching
@@ -159,7 +153,7 @@ class IntelligentRetriever {
         if (!this.anthropic || results.length === 0) {
             return results.slice(0, topN);
         }
-        const retrievalConfig = (0, config_js_1.getConfigValue)('retrieval');
+        const retrievalConfig = getConfigValue('retrieval');
         logger.debug('Reranking results', { count: results.length, topN });
         try {
             // Prepare context for reranking
@@ -220,7 +214,7 @@ Return format: [1, 3, 2, ...] (just the numbers, most relevant first)`,
         }
     }
     async findSimilarDocuments(documentId, topK = 5) {
-        const vectorStore = (0, vector_store_js_1.getVectorStore)();
+        const vectorStore = getVectorStore();
         await vectorStore.initialize();
         // Get the document's embedding by querying with its content
         const results = await vectorStore.query([], 1, { id: documentId });
@@ -229,7 +223,7 @@ Return format: [1, 3, 2, ...] (just the numbers, most relevant first)`,
         }
         const sourceDoc = results[0];
         // Search for similar documents
-        const embeddingProvider = (0, provider_js_1.getEmbeddingProvider)();
+        const embeddingProvider = getEmbeddingProvider();
         const embedding = await embeddingProvider.generateEmbedding(sourceDoc.document.content);
         const similar = await vectorStore.query(embedding, topK + 1);
         // Filter out the source document
@@ -254,14 +248,12 @@ Return format: [1, 3, 2, ...] (just the numbers, most relevant first)`,
         return boostedResults.sort((a, b) => b.score - a.score).slice(0, 10);
     }
 }
-exports.IntelligentRetriever = IntelligentRetriever;
 // Singleton instance
 let retrieverInstance = null;
-const getRetriever = () => {
+export const getRetriever = () => {
     if (!retrieverInstance) {
         retrieverInstance = new IntelligentRetriever();
     }
     return retrieverInstance;
 };
-exports.getRetriever = getRetriever;
 //# sourceMappingURL=retriever.js.map

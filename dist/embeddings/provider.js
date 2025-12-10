@@ -1,32 +1,26 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.getEmbeddingProvider = exports.OpenAIEmbeddingProvider = void 0;
-exports.createEmbeddingProvider = createEmbeddingProvider;
-const openai_1 = __importDefault(require("openai"));
-const p_queue_1 = __importDefault(require("p-queue"));
-const p_retry_1 = __importDefault(require("p-retry"));
-const config_js_1 = require("../core/config.js");
-const logger_js_1 = require("../utils/logger.js");
-const cache_js_1 = require("../utils/cache.js");
-const hashing_js_1 = require("../utils/hashing.js");
-const logger = (0, logger_js_1.createChildLogger)('embeddings');
-class OpenAIEmbeddingProvider {
+import OpenAI from 'openai';
+import PQueue from 'p-queue';
+import pRetry from 'p-retry';
+import { ChromaClient, IncludeEnum } from 'chromadb';
+import { getConfigValue } from '../core/config.js';
+import { createChildLogger } from '../utils/logger.js';
+import { getEmbeddingCache } from '../utils/cache.js';
+import { hashContent } from '../utils/hashing.js';
+const logger = createChildLogger('embeddings');
+export class OpenAIEmbeddingProvider {
     client;
     model;
     dimensions;
     queue;
     maxRetries;
     retryDelay;
-    cache = (0, cache_js_1.getEmbeddingCache)();
+    cache = getEmbeddingCache();
     constructor() {
-        const embeddingConfig = (0, config_js_1.getConfigValue)('embeddings');
+        const embeddingConfig = getConfigValue('embeddings');
         if (!process.env['OPENAI_API_KEY']) {
             throw new Error('OPENAI_API_KEY environment variable is required');
         }
-        this.client = new openai_1.default({
+        this.client = new OpenAI({
             apiKey: process.env['OPENAI_API_KEY'],
         });
         this.model = embeddingConfig.model;
@@ -34,7 +28,7 @@ class OpenAIEmbeddingProvider {
         this.maxRetries = embeddingConfig.maxRetries;
         this.retryDelay = embeddingConfig.retryDelay;
         // Rate limiting queue
-        this.queue = new p_queue_1.default({
+        this.queue = new PQueue({
             concurrency: 5,
             intervalCap: 100,
             interval: 60000, // 100 requests per minute
@@ -46,7 +40,7 @@ class OpenAIEmbeddingProvider {
         let totalPromptTokens = 0;
         let totalTokens = 0;
         // Process in batches
-        const batchSize = (0, config_js_1.getConfigValue)('embeddings').batchSize;
+        const batchSize = getConfigValue('embeddings').batchSize;
         const batches = [];
         for (let i = 0; i < request.texts.length; i += batchSize) {
             batches.push(request.texts.slice(i, i + batchSize));
@@ -73,7 +67,7 @@ class OpenAIEmbeddingProvider {
     async processBatch(texts, model) {
         // Check cache first
         const cachedEmbeddings = texts.map((text) => {
-            const cacheKey = `${model}:${(0, hashing_js_1.hashContent)(text)}`;
+            const cacheKey = `${model}:${hashContent(text)}`;
             return this.cache.get(cacheKey) || null;
         });
         const uncachedTexts = [];
@@ -93,7 +87,7 @@ class OpenAIEmbeddingProvider {
             };
         }
         // Generate embeddings for uncached texts
-        const response = await this.queue.add(() => (0, p_retry_1.default)(async () => {
+        const response = await this.queue.add(() => pRetry(async () => {
             return await this.client.embeddings.create({
                 model,
                 input: uncachedTexts,
@@ -120,7 +114,7 @@ class OpenAIEmbeddingProvider {
             const embedding = item.embedding;
             embeddings[originalIndex] = embedding;
             // Cache the embedding
-            const cacheKey = `${model}:${(0, hashing_js_1.hashContent)(text)}`;
+            const cacheKey = `${model}:${hashContent(text)}`;
             this.cache.set(cacheKey, embedding);
         });
         return {
@@ -137,24 +131,121 @@ class OpenAIEmbeddingProvider {
         return response.embeddings[0];
     }
 }
-exports.OpenAIEmbeddingProvider = OpenAIEmbeddingProvider;
+// ChromaDB's built-in embedding function (no API key required)
+export class ChromaEmbeddingProvider {
+    client;
+    cache = getEmbeddingCache();
+    dimensions = 384; // Default for all-MiniLM-L6-v2
+    constructor() {
+        const chromaConfig = getConfigValue('chromadb');
+        this.client = new ChromaClient({
+            path: `http://${chromaConfig.host}:${chromaConfig.port}`,
+        });
+    }
+    async generateEmbeddings(request) {
+        const embeddings = [];
+        // Check cache first
+        const uncachedTexts = [];
+        const uncachedIndices = [];
+        for (let i = 0; i < request.texts.length; i++) {
+            const text = request.texts[i];
+            const cacheKey = `chroma:${hashContent(text)}`;
+            const cached = this.cache.get(cacheKey);
+            if (cached) {
+                embeddings[i] = cached;
+            }
+            else {
+                uncachedTexts.push(text);
+                uncachedIndices.push(i);
+            }
+        }
+        if (uncachedTexts.length === 0) {
+            return {
+                embeddings,
+                model: 'chroma-default',
+                usage: { promptTokens: 0, totalTokens: 0 },
+            };
+        }
+        // Use ChromaDB's embedding endpoint
+        // ChromaDB uses sentence-transformers by default
+        logger.info('Generating embeddings via ChromaDB', { count: uncachedTexts.length });
+        // ChromaDB doesn't expose a direct embedding API, so we create a temp collection
+        const tempCollectionName = `temp_embed_${Date.now()}`;
+        try {
+            const collection = await this.client.createCollection({
+                name: tempCollectionName,
+            });
+            // Add documents to get embeddings
+            const ids = uncachedTexts.map((_, i) => `temp_${i}`);
+            await collection.add({
+                ids,
+                documents: uncachedTexts,
+            });
+            // Retrieve with embeddings
+            const results = await collection.get({
+                ids,
+                include: [IncludeEnum.Embeddings],
+            });
+            // Extract embeddings and cache them
+            if (results.embeddings) {
+                results.embeddings.forEach((embedding, i) => {
+                    if (embedding) {
+                        const originalIndex = uncachedIndices[i];
+                        embeddings[originalIndex] = embedding;
+                        const text = uncachedTexts[i];
+                        const cacheKey = `chroma:${hashContent(text)}`;
+                        this.cache.set(cacheKey, embedding);
+                    }
+                });
+            }
+            // Cleanup temp collection
+            await this.client.deleteCollection({ name: tempCollectionName });
+        }
+        catch (error) {
+            // Try to cleanup on error
+            try {
+                await this.client.deleteCollection({ name: tempCollectionName });
+            }
+            catch {
+                // Ignore cleanup errors
+            }
+            throw error;
+        }
+        return {
+            embeddings,
+            model: 'chroma-default',
+            usage: { promptTokens: 0, totalTokens: 0 },
+        };
+    }
+    async generateEmbedding(text) {
+        const response = await this.generateEmbeddings({ texts: [text] });
+        return response.embeddings[0];
+    }
+}
 // Factory function
-function createEmbeddingProvider() {
-    const provider = (0, config_js_1.getConfigValue)('embeddings').provider;
+export function createEmbeddingProvider() {
+    const provider = getConfigValue('embeddings').provider;
     switch (provider) {
         case 'openai':
+            if (!process.env['OPENAI_API_KEY']) {
+                logger.warn('OPENAI_API_KEY not set, falling back to ChromaDB embeddings');
+                return new ChromaEmbeddingProvider();
+            }
             return new OpenAIEmbeddingProvider();
+        case 'chroma':
+            return new ChromaEmbeddingProvider();
         default:
-            throw new Error(`Unsupported embedding provider: ${provider}`);
+            // Default to ChromaDB's built-in embeddings (no API key required)
+            logger.info('Using ChromaDB default embeddings (no API key required)');
+            return new ChromaEmbeddingProvider();
     }
 }
 // Singleton instance
 let embeddingProviderInstance = null;
-const getEmbeddingProvider = () => {
+export const getEmbeddingProvider = () => {
     if (!embeddingProviderInstance) {
         embeddingProviderInstance = createEmbeddingProvider();
     }
     return embeddingProviderInstance;
 };
-exports.getEmbeddingProvider = getEmbeddingProvider;
 //# sourceMappingURL=provider.js.map

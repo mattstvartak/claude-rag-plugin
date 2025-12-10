@@ -1,31 +1,28 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createOrchestrator = exports.Orchestrator = void 0;
-const uuid_1 = require("uuid");
-const base_agent_js_1 = require("./base-agent.js");
-const retriever_agent_js_1 = require("./retriever-agent.js");
-const analyzer_agent_js_1 = require("./analyzer-agent.js");
-const synthesizer_agent_js_1 = require("./synthesizer-agent.js");
-const config_js_1 = require("../core/config.js");
-const logger_js_1 = require("../utils/logger.js");
-const logger = (0, logger_js_1.createChildLogger)('orchestrator');
-class Orchestrator extends base_agent_js_1.BaseAgent {
+import { v4 as uuidv4 } from 'uuid';
+import { BaseAgent } from './base-agent.js';
+import { RetrieverAgent } from './retriever-agent.js';
+import { AnalyzerAgent } from './analyzer-agent.js';
+import { SynthesizerAgent } from './synthesizer-agent.js';
+import { getConfigValue } from '../core/config.js';
+import { createChildLogger } from '../utils/logger.js';
+const logger = createChildLogger('orchestrator');
+export class Orchestrator extends BaseAgent {
     retrieverAgent;
     analyzerAgent;
     synthesizerAgent;
     maxIterations;
     verbose;
     constructor(options = {}) {
-        const agentConfig = (0, config_js_1.getConfigValue)('agents').orchestrator;
+        const agentConfig = getConfigValue('agents').orchestrator;
         super({
             role: 'orchestrator',
             model: agentConfig.model,
             temperature: agentConfig.temperature,
             maxTokens: 4096,
         });
-        this.retrieverAgent = new retriever_agent_js_1.RetrieverAgent();
-        this.analyzerAgent = new analyzer_agent_js_1.AnalyzerAgent();
-        this.synthesizerAgent = new synthesizer_agent_js_1.SynthesizerAgent();
+        this.retrieverAgent = new RetrieverAgent();
+        this.analyzerAgent = new AnalyzerAgent();
+        this.synthesizerAgent = new SynthesizerAgent();
         this.maxIterations = options.maxIterations ?? agentConfig.maxIterations;
         this.verbose = options.verbose ?? false;
     }
@@ -116,7 +113,7 @@ Provide a plan as JSON:
         }
         // Convert to tasks
         const tasks = planData.steps.map((step, index) => ({
-            id: (0, uuid_1.v4)(),
+            id: uuidv4(),
             type: step.agent === 'retriever' ? 'query' : step.agent === 'analyzer' ? 'analyze' : 'synthesize',
             input: { purpose: step.purpose, order: index },
             status: 'pending',
@@ -237,10 +234,8 @@ Provide a plan as JSON:
         this.synthesizerAgent.clearHistory();
     }
 }
-exports.Orchestrator = Orchestrator;
 // Factory function
-const createOrchestrator = (options) => {
+export const createOrchestrator = (options) => {
     return new Orchestrator(options);
 };
-exports.createOrchestrator = createOrchestrator;
 //# sourceMappingURL=orchestrator.js.map

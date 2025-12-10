@@ -1,19 +1,16 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.getVectorStore = exports.VectorStore = void 0;
-const chromadb_1 = require("chromadb");
-const uuid_1 = require("uuid");
-const config_js_1 = require("./config.js");
-const logger_js_1 = require("../utils/logger.js");
-const logger = (0, logger_js_1.createChildLogger)('vector-store');
-class VectorStore {
+import { ChromaClient, IncludeEnum } from 'chromadb';
+import { v4 as uuidv4 } from 'uuid';
+import { getConfigValue } from './config.js';
+import { createChildLogger } from '../utils/logger.js';
+const logger = createChildLogger('vector-store');
+export class VectorStore {
     client;
     collection = null;
     collectionName;
     initialized = false;
     constructor() {
-        const chromaConfig = (0, config_js_1.getConfigValue)('chromadb');
-        this.client = new chromadb_1.ChromaClient({
+        const chromaConfig = getConfigValue('chromadb');
+        this.client = new ChromaClient({
             path: `http://${chromaConfig.host}:${chromaConfig.port}`,
         });
         this.collectionName = chromaConfig.collection;
@@ -48,7 +45,7 @@ class VectorStore {
     }
     async addDocuments(documents, embeddings) {
         this.ensureInitialized();
-        const ids = documents.map((doc) => doc.id || (0, uuid_1.v4)());
+        const ids = documents.map((doc) => doc.id || uuidv4());
         const contents = documents.map((doc) => doc.content);
         const metadatas = documents.map((doc) => this.flattenMetadata(doc.metadata));
         try {
@@ -116,7 +113,7 @@ class VectorStore {
                 queryEmbeddings: [queryEmbedding],
                 nResults: topK,
                 where: whereClause,
-                include: [chromadb_1.IncludeEnum.Documents, chromadb_1.IncludeEnum.Metadatas, chromadb_1.IncludeEnum.Distances],
+                include: [IncludeEnum.Documents, IncludeEnum.Metadatas, IncludeEnum.Distances],
             });
             return this.formatResults(results);
         }
@@ -130,7 +127,7 @@ class VectorStore {
         try {
             const results = await this.collection.get({
                 where: { filePath: { $eq: filePath } },
-                include: [chromadb_1.IncludeEnum.Documents, chromadb_1.IncludeEnum.Metadatas],
+                include: [IncludeEnum.Documents, IncludeEnum.Metadatas],
             });
             return this.formatDocuments(results);
         }
@@ -145,7 +142,13 @@ class VectorStore {
     }
     async listCollections() {
         const collections = await this.client.listCollections();
-        return collections.map((c) => c.name);
+        return collections.map((c) => {
+            if (typeof c === 'string')
+                return c;
+            if (c && typeof c === 'object' && 'name' in c)
+                return String(c.name);
+            return String(c);
+        });
     }
     async deleteCollection() {
         try {
@@ -231,14 +234,12 @@ class VectorStore {
         }));
     }
 }
-exports.VectorStore = VectorStore;
 // Singleton instance
 let vectorStoreInstance = null;
-const getVectorStore = () => {
+export const getVectorStore = () => {
     if (!vectorStoreInstance) {
         vectorStoreInstance = new VectorStore();
     }
     return vectorStoreInstance;
 };
-exports.getVectorStore = getVectorStore;
 //# sourceMappingURL=vector-store.js.map

@@ -1,13 +1,7 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.BaseAgent = void 0;
-const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
-const logger_js_1 = require("../utils/logger.js");
-const logger = (0, logger_js_1.createChildLogger)('agent');
-class BaseAgent {
+import Anthropic from '@anthropic-ai/sdk';
+import { createChildLogger } from '../utils/logger.js';
+const logger = createChildLogger('agent');
+export class BaseAgent {
     anthropic;
     config;
     conversationHistory = [];
@@ -15,7 +9,7 @@ class BaseAgent {
         if (!process.env['ANTHROPIC_API_KEY']) {
             throw new Error('ANTHROPIC_API_KEY environment variable is required');
         }
-        this.anthropic = new sdk_1.default({
+        this.anthropic = new Anthropic({
             apiKey: process.env['ANTHROPIC_API_KEY'],
         });
         this.config = config;
@@ -129,5 +123,4 @@ class BaseAgent {
         return this.config.role;
     }
 }
-exports.BaseAgent = BaseAgent;
 //# sourceMappingURL=base-agent.js.map

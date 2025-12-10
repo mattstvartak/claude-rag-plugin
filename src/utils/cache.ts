@@ -4,7 +4,7 @@ import { createChildLogger } from './logger.js';
 
 const logger = createChildLogger('cache');
 
-export class CacheManager<T> {
+export class CacheManager<T extends object> {
   private cache: LRUCache<string, T>;
   private enabled: boolean;
 
@@ -69,7 +69,7 @@ export class CacheManager<T> {
 
 // Singleton instances for common cache types
 let embeddingCache: CacheManager<number[]> | null = null;
-let retrievalCache: CacheManager<unknown> | null = null;
+let retrievalCache: CacheManager<unknown[]> | null = null;
 
 export const getEmbeddingCache = (): CacheManager<number[]> => {
   if (!embeddingCache) {
@@ -78,9 +78,9 @@ export const getEmbeddingCache = (): CacheManager<number[]> => {
   return embeddingCache;
 };
 
-export const getRetrievalCache = (): CacheManager<unknown> => {
+export const getRetrievalCache = (): CacheManager<unknown[]> => {
   if (!retrievalCache) {
-    retrievalCache = new CacheManager<unknown>();
+    retrievalCache = new CacheManager<unknown[]>();
   }
   return retrievalCache;
 };

@@ -1,13 +1,10 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.SynthesizerAgent = void 0;
-const base_agent_js_1 = require("./base-agent.js");
-const config_js_1 = require("../core/config.js");
-const logger_js_1 = require("../utils/logger.js");
-const logger = (0, logger_js_1.createChildLogger)('synthesizer-agent');
-class SynthesizerAgent extends base_agent_js_1.BaseAgent {
+import { BaseAgent } from './base-agent.js';
+import { getConfigValue } from '../core/config.js';
+import { createChildLogger } from '../utils/logger.js';
+const logger = createChildLogger('synthesizer-agent');
+export class SynthesizerAgent extends BaseAgent {
     constructor() {
-        const agentConfig = (0, config_js_1.getConfigValue)('agents').synthesizer;
+        const agentConfig = getConfigValue('agents').synthesizer;
         super({
             role: 'synthesizer',
             model: agentConfig.model,
@@ -180,5 +177,4 @@ Generate clean, production-ready code that follows the patterns in the codebase.
         return this.sendMessage(prompt);
     }
 }
-exports.SynthesizerAgent = SynthesizerAgent;
 //# sourceMappingURL=synthesizer-agent.js.map

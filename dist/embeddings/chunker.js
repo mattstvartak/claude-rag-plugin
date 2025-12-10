@@ -1,15 +1,12 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createChunker = exports.DocumentChunker = void 0;
-const config_js_1 = require("../core/config.js");
-const logger_js_1 = require("../utils/logger.js");
-const hashing_js_1 = require("../utils/hashing.js");
-const logger = (0, logger_js_1.createChildLogger)('chunker');
-class DocumentChunker {
+import { getConfigValue } from '../core/config.js';
+import { createChildLogger } from '../utils/logger.js';
+import { generateDocumentId, hashContent } from '../utils/hashing.js';
+const logger = createChildLogger('chunker');
+export class DocumentChunker {
     chunkSize;
     chunkOverlap;
     constructor(options) {
-        const ingestionConfig = (0, config_js_1.getConfigValue)('ingestion');
+        const ingestionConfig = getConfigValue('ingestion');
         this.chunkSize = options?.chunkSize ?? ingestionConfig.chunkSize;
         this.chunkOverlap = options?.chunkOverlap ?? ingestionConfig.chunkOverlap;
     }
@@ -40,11 +37,11 @@ class DocumentChunker {
                 endLine: chunk.endLine,
                 createdAt: now,
                 updatedAt: now,
-                hash: (0, hashing_js_1.hashContent)(chunk.content),
+                hash: hashContent(chunk.content),
                 projectName,
             };
             chunks.push({
-                id: (0, hashing_js_1.generateDocumentId)(filePath, index),
+                id: generateDocumentId(filePath, index),
                 content: chunk.content,
                 metadata,
                 tokenCount: this.estimateTokenCount(chunk.content),
@@ -304,9 +301,7 @@ class DocumentChunker {
         return Math.ceil(text.length / 4);
     }
 }
-exports.DocumentChunker = DocumentChunker;
-const createChunker = (options) => {
+export const createChunker = (options) => {
     return new DocumentChunker(options);
 };
-exports.createChunker = createChunker;
 //# sourceMappingURL=chunker.js.map

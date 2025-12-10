@@ -11,75 +11,161 @@ A production-ready Claude Code plugin that combines ChromaDB vector embeddings w
 - **MCP Integration**: Full Model Context Protocol support for Claude Code
 - **Auto-Context**: Automatically retrieves relevant code before making changes
 
-## Quick Start
+## Installation for Claude Code CLI
 
-### 1. Install Dependencies
+### Option 1: Install from npm (Recommended)
 
 ```bash
+# Install globally
+npm install -g claude-rag-plugin
+
+# Or install locally in your project
+npm install claude-rag-plugin
+```
+
+### Option 2: Install from Source
+
+```bash
+# Clone and build
+git clone https://github.com/yourusername/claude-rag-plugin.git
 cd claude-rag-plugin
 npm install
 npm run build
+npm link  # Makes it available globally
 ```
 
-### 2. Set Up Environment
+## Quick Setup
 
-```bash
-cp .env.example .env
-# Edit .env with your API keys:
-# - OPENAI_API_KEY (for embeddings)
-# - ANTHROPIC_API_KEY (for agents)
-```
-
-### 3. Start ChromaDB
+### 1. Start ChromaDB
 
 ```bash
 # Using Docker (recommended)
-docker run -p 8000:8000 chromadb/chroma
+docker run -d -p 8000:8000 chromadb/chroma
 
 # Or install locally
 pip install chromadb
 chroma run --host localhost --port 8000
 ```
 
-### 4. Index Your Codebase
+### 2. Add to Claude Code
+
+Run this command to add the MCP server to Claude Code:
 
 ```bash
-# Using CLI
-npx claude-rag index /path/to/your/codebase
+# If installed globally via npm
+claude mcp add claude-rag -- npx claude-rag serve
 
-# Or with project name
-npx claude-rag index /path/to/your/codebase --project "my-project"
+# If installed from source
+claude mcp add claude-rag -- node /path/to/claude-rag-plugin/dist/mcp/server.js
 ```
 
-### 5. Configure Claude Code
-
-Add to your Claude Code MCP settings (`~/.claude/settings.json`):
+Or manually edit `~/.claude/settings.json`:
 
 ```json
 {
   "mcpServers": {
     "claude-rag": {
-      "command": "node",
-      "args": ["/path/to/claude-rag-plugin/dist/mcp/server.js"],
+      "command": "npx",
+      "args": ["claude-rag", "serve"],
       "env": {
-        "OPENAI_API_KEY": "your-key",
-        "ANTHROPIC_API_KEY": "your-key"
+        "CHROMADB_HOST": "localhost",
+        "CHROMADB_PORT": "8000"
       }
     }
   }
 }
 ```
 
-## Usage
+### 3. (Optional) Set Environment Variables
 
-### CLI Commands
+Only needed if you want higher-quality OpenAI embeddings:
+
+```bash
+# Optional - for better embeddings
+export OPENAI_API_KEY="your-openai-key"
+```
+
+### 4. Index Your Codebase
+
+From within Claude Code CLI, use the tool:
+
+```
+Use rag_index to index /path/to/your/codebase
+```
+
+Or from terminal:
+
+```bash
+claude-rag index /path/to/your/codebase --project "my-project"
+```
+
+## Using with Claude Code CLI
+
+Once installed, Claude Code will automatically have access to these tools:
+
+### Available Tools
+
+| Tool | Description | Example Usage |
+|------|-------------|---------------|
+| `rag_context` | **Use first!** Gets relevant context before code changes | "Use rag_context for adding authentication" |
+| `rag_search` | Semantic search across codebase | "Use rag_search to find error handling code" |
+| `rag_query` | Ask questions, get AI-synthesized answers | "Use rag_query to explain the database layer" |
+| `rag_index` | Index a directory | "Use rag_index on ./src" |
+| `rag_patterns` | Find coding patterns and conventions | "Use rag_patterns for API routes" |
+| `rag_dependencies` | Find code that depends on a target | "Use rag_dependencies for UserService" |
+| `rag_status` | Check system status | "Use rag_status" |
+
+### Example Prompts in Claude Code
+
+```
+# Index your codebase first
+"Index this codebase using rag_index"
+
+# Get context before making changes
+"I want to add a new API endpoint. Use rag_context first to understand the patterns"
+
+# Search for specific code
+"Search for authentication middleware using rag_search"
+
+# Ask questions about the codebase
+"Use rag_query to explain how the payment system works"
+
+# Find dependencies before refactoring
+"Use rag_dependencies to find all code using the UserModel"
+```
+
+### Automatic Context (Cost Saving)
+
+The `rag_context` tool is designed to automatically provide relevant context before Claude makes changes. This:
+- Reduces token usage by providing targeted context
+- Prevents Claude from re-reading many files
+- Ensures consistency with existing patterns
+
+Just tell Claude what you want to do, and it will use the RAG tools automatically:
+
+```
+"Add a new endpoint for user preferences following existing patterns"
+```
+
+Claude will automatically:
+1. Use `rag_context` to find related code
+2. Use `rag_patterns` to understand conventions
+3. Make informed changes
+
+## CLI Commands
 
 ```bash
 # Index a codebase
 claude-rag index ./src --project "my-app"
 
+# Index with watch mode (re-index on changes)
+claude-rag index ./src --watch
+
 # Search for code
 claude-rag search "authentication middleware"
+
+# Search with filters
+claude-rag search "error handling" --type ts,js --top-k 5
 
 # Ask questions about the codebase
 claude-rag query "How does the login flow work?"
@@ -92,34 +178,14 @@ claude-rag clear --yes
 
 # Initialize config in current directory
 claude-rag init
+
+# Start MCP server (used by Claude Code)
+claude-rag serve
 ```
-
-### MCP Tools (Available in Claude Code)
-
-Once configured, Claude Code automatically has access to these tools:
-
-| Tool | Description |
-|------|-------------|
-| `rag_context` | **Use first!** Gets relevant context before making code changes |
-| `rag_search` | Semantic search across the codebase |
-| `rag_query` | Ask questions, get AI-synthesized answers |
-| `rag_index` | Index a directory |
-| `rag_patterns` | Find coding patterns and conventions |
-| `rag_dependencies` | Find code that depends on a target |
-| `rag_status` | Check system status |
-
-### Example Workflow
-
-When you ask Claude Code to make changes:
-
-1. Claude automatically uses `rag_context` to understand related code
-2. Uses `rag_patterns` to follow existing conventions
-3. Uses `rag_dependencies` to avoid breaking changes
-4. Makes informed modifications
 
 ## Configuration
 
-Create `.claude-rag.json` in your project root:
+Create `.claude-rag.json` in your project root for project-specific settings:
 
 ```json
 {
@@ -144,7 +210,8 @@ Create `.claude-rag.json` in your project root:
     "chunkOverlap": 200,
     "excludePatterns": [
       "**/node_modules/**",
-      "**/dist/**"
+      "**/dist/**",
+      "**/.git/**"
     ]
   }
 }
@@ -154,7 +221,7 @@ Create `.claude-rag.json` in your project root:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      Claude Code                             │
+│                      Claude Code CLI                         │
 │                         (MCP Client)                         │
 └─────────────────────────┬───────────────────────────────────┘
                           │
@@ -191,7 +258,7 @@ Create `.claude-rag.json` in your project root:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## API Usage
+## API Usage (Programmatic)
 
 ```typescript
 import ClaudeRAG from 'claude-rag-plugin';
@@ -214,9 +281,44 @@ const status = await rag.getStatus();
 ## Requirements
 
 - Node.js >= 18
-- ChromaDB server running
-- OpenAI API key (for embeddings)
-- Anthropic API key (for agents)
+- ChromaDB server running (Docker recommended)
+- **No API keys required by default!** Uses ChromaDB's built-in embeddings
+- Optional: OpenAI API key for higher-quality embeddings (set `OPENAI_API_KEY`)
+
+## Troubleshooting
+
+### ChromaDB Connection Issues
+
+```bash
+# Check if ChromaDB is running
+curl http://localhost:8000/api/v1/heartbeat
+
+# Restart ChromaDB
+docker restart <container-id>
+```
+
+### MCP Server Not Found
+
+```bash
+# Verify installation
+which claude-rag
+
+# Check Claude Code settings
+cat ~/.claude/settings.json
+
+# Test MCP server manually
+claude-rag serve
+```
+
+### Indexing Errors
+
+```bash
+# Check file permissions
+ls -la /path/to/codebase
+
+# Try with verbose logging
+LOG_LEVEL=debug claude-rag index ./src
+```
 
 ## License
 

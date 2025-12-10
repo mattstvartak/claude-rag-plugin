@@ -1,16 +1,14 @@
 #!/usr/bin/env node
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const index_js_1 = require("@modelcontextprotocol/sdk/server/index.js");
-const stdio_js_1 = require("@modelcontextprotocol/sdk/server/stdio.js");
-const types_js_1 = require("@modelcontextprotocol/sdk/types.js");
-const config_js_1 = require("../core/config.js");
-const vector_store_js_1 = require("../core/vector-store.js");
-const ingestion_js_1 = require("../embeddings/ingestion.js");
-const retriever_js_1 = require("../retrieval/retriever.js");
-const orchestrator_js_1 = require("../agents/orchestrator.js");
-const logger_js_1 = require("../utils/logger.js");
-const logger = (0, logger_js_1.createChildLogger)('mcp-server');
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema, ListPromptsRequestSchema, GetPromptRequestSchema, } from '@modelcontextprotocol/sdk/types.js';
+import { getConfigValue } from '../core/config.js';
+import { getVectorStore } from '../core/vector-store.js';
+import { getIngestionService } from '../embeddings/ingestion.js';
+import { getRetriever } from '../retrieval/retriever.js';
+import { createOrchestrator } from '../agents/orchestrator.js';
+import { createChildLogger } from '../utils/logger.js';
+const logger = createChildLogger('mcp-server');
 // Tool definitions - designed for automatic usage by Claude Code
 const TOOLS = [
     {
@@ -170,8 +168,8 @@ const PROMPTS = [
     },
 ];
 async function createMCPServer() {
-    const mcpConfig = (0, config_js_1.getConfigValue)('mcp');
-    const server = new index_js_1.Server({
+    const mcpConfig = getConfigValue('mcp');
+    const server = new Server({
         name: mcpConfig.serverName,
         version: mcpConfig.version,
     }, {
@@ -183,10 +181,10 @@ async function createMCPServer() {
     });
     // Initialize services lazily
     let servicesInitialized = false;
-    const vectorStore = (0, vector_store_js_1.getVectorStore)();
-    const ingestionService = (0, ingestion_js_1.getIngestionService)();
-    const retriever = (0, retriever_js_1.getRetriever)();
-    const orchestrator = (0, orchestrator_js_1.createOrchestrator)();
+    const vectorStore = getVectorStore();
+    const ingestionService = getIngestionService();
+    const retriever = getRetriever();
+    const orchestrator = createOrchestrator();
     async function ensureInitialized() {
         if (!servicesInitialized) {
             await vectorStore.initialize();
@@ -194,11 +192,11 @@ async function createMCPServer() {
         }
     }
     // List tools handler
-    server.setRequestHandler(types_js_1.ListToolsRequestSchema, async () => {
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
         return { tools: TOOLS };
     });
     // Call tool handler
-    server.setRequestHandler(types_js_1.CallToolRequestSchema, async (request) => {
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { name, arguments: args } = request.params;
         logger.info('Tool called', { name, args });
         try {
@@ -324,8 +322,8 @@ async function createMCPServer() {
                                     documentCount: count,
                                     collections,
                                     config: {
-                                        embeddingModel: (0, config_js_1.getConfigValue)('embeddings').model,
-                                        chunkSize: (0, config_js_1.getConfigValue)('ingestion').chunkSize,
+                                        embeddingModel: getConfigValue('embeddings').model,
+                                        chunkSize: getConfigValue('ingestion').chunkSize,
                                     },
                                 }, null, 2),
                             }],
@@ -406,7 +404,7 @@ async function createMCPServer() {
         }
     });
     // List resources handler
-    server.setRequestHandler(types_js_1.ListResourcesRequestSchema, async () => {
+    server.setRequestHandler(ListResourcesRequestSchema, async () => {
         return {
             resources: [
                 {
@@ -425,7 +423,7 @@ async function createMCPServer() {
         };
     });
     // Read resource handler
-    server.setRequestHandler(types_js_1.ReadResourceRequestSchema, async (request) => {
+    server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         const { uri } = request.params;
         switch (uri) {
             case 'rag://status': {
@@ -445,9 +443,9 @@ async function createMCPServer() {
                             uri,
                             mimeType: 'application/json',
                             text: JSON.stringify({
-                                embeddings: (0, config_js_1.getConfigValue)('embeddings'),
-                                retrieval: (0, config_js_1.getConfigValue)('retrieval'),
-                                ingestion: (0, config_js_1.getConfigValue)('ingestion'),
+                                embeddings: getConfigValue('embeddings'),
+                                retrieval: getConfigValue('retrieval'),
+                                ingestion: getConfigValue('ingestion'),
                             }, null, 2),
                         }],
                 };
@@ -457,11 +455,11 @@ async function createMCPServer() {
         }
     });
     // List prompts handler
-    server.setRequestHandler(types_js_1.ListPromptsRequestSchema, async () => {
+    server.setRequestHandler(ListPromptsRequestSchema, async () => {
         return { prompts: PROMPTS };
     });
     // Get prompt handler
-    server.setRequestHandler(types_js_1.GetPromptRequestSchema, async (request) => {
+    server.setRequestHandler(GetPromptRequestSchema, async (request) => {
         const { name, arguments: args } = request.params;
         switch (name) {
             case 'refactor_with_context': {
@@ -551,7 +549,7 @@ Use rag_patterns and rag_search to compare against existing code. Check for:
 async function main() {
     logger.info('Starting Claude RAG MCP Server...');
     const server = await createMCPServer();
-    const transport = new stdio_js_1.StdioServerTransport();
+    const transport = new StdioServerTransport();
     await server.connect(transport);
     logger.info('Claude RAG MCP Server running');
 }

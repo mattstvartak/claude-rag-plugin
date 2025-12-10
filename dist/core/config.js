@@ -1,17 +1,11 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.getConfigValue = exports.getConfig = exports.ConfigManager = void 0;
-const fs_1 = require("fs");
-const path_1 = require("path");
-const types_js_1 = require("./types.js");
-const dotenv_1 = __importDefault(require("dotenv"));
-dotenv_1.default.config();
-const DEFAULT_CONFIG_PATH = (0, path_1.join)(process.cwd(), 'config', 'default.json');
-const USER_CONFIG_PATH = (0, path_1.join)(process.cwd(), '.claude-rag.json');
-class ConfigManager {
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+import { ConfigSchema } from './types.js';
+import dotenv from 'dotenv';
+dotenv.config();
+const DEFAULT_CONFIG_PATH = join(process.cwd(), 'config', 'default.json');
+const USER_CONFIG_PATH = join(process.cwd(), '.claude-rag.json');
+export class ConfigManager {
     static instance;
     config;
     constructor() {
@@ -26,24 +20,24 @@ class ConfigManager {
     loadConfig() {
         let rawConfig = {};
         // Load default config from package
-        const packageConfigPath = (0, path_1.join)(__dirname, '../../config/default.json');
-        if ((0, fs_1.existsSync)(packageConfigPath)) {
-            const defaultConfig = JSON.parse((0, fs_1.readFileSync)(packageConfigPath, 'utf-8'));
+        const packageConfigPath = join(__dirname, '../../config/default.json');
+        if (existsSync(packageConfigPath)) {
+            const defaultConfig = JSON.parse(readFileSync(packageConfigPath, 'utf-8'));
             rawConfig = { ...defaultConfig };
         }
-        else if ((0, fs_1.existsSync)(DEFAULT_CONFIG_PATH)) {
-            const defaultConfig = JSON.parse((0, fs_1.readFileSync)(DEFAULT_CONFIG_PATH, 'utf-8'));
+        else if (existsSync(DEFAULT_CONFIG_PATH)) {
+            const defaultConfig = JSON.parse(readFileSync(DEFAULT_CONFIG_PATH, 'utf-8'));
             rawConfig = { ...defaultConfig };
         }
         // Override with user config if exists
-        if ((0, fs_1.existsSync)(USER_CONFIG_PATH)) {
-            const userConfig = JSON.parse((0, fs_1.readFileSync)(USER_CONFIG_PATH, 'utf-8'));
+        if (existsSync(USER_CONFIG_PATH)) {
+            const userConfig = JSON.parse(readFileSync(USER_CONFIG_PATH, 'utf-8'));
             rawConfig = this.deepMerge(rawConfig, userConfig);
         }
         // Override with environment variables
         rawConfig = this.applyEnvOverrides(rawConfig);
         // Validate and return
-        return types_js_1.ConfigSchema.parse(rawConfig);
+        return ConfigSchema.parse(rawConfig);
     }
     deepMerge(target, source) {
         const result = { ...target };
@@ -102,9 +96,6 @@ class ConfigManager {
         this.config = this.loadConfig();
     }
 }
-exports.ConfigManager = ConfigManager;
-const getConfig = () => ConfigManager.getInstance().getAll();
-exports.getConfig = getConfig;
-const getConfigValue = (key) => ConfigManager.getInstance().get(key);
-exports.getConfigValue = getConfigValue;
+export const getConfig = () => ConfigManager.getInstance().getAll();
+export const getConfigValue = (key) => ConfigManager.getInstance().get(key);
 //# sourceMappingURL=config.js.map

@@ -1,32 +1,26 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.getIngestionService = exports.DocumentIngestionService = void 0;
-const promises_1 = require("fs/promises");
-const path_1 = require("path");
-const glob_1 = require("glob");
-const chokidar_1 = __importDefault(require("chokidar"));
-const p_queue_1 = __importDefault(require("p-queue"));
-const config_js_1 = require("../core/config.js");
-const vector_store_js_1 = require("../core/vector-store.js");
-const logger_js_1 = require("../utils/logger.js");
-const hashing_js_1 = require("../utils/hashing.js");
-const chunker_js_1 = require("./chunker.js");
-const provider_js_1 = require("./provider.js");
-const logger = (0, logger_js_1.createChildLogger)('ingestion');
-class DocumentIngestionService {
+import { readFile, stat } from 'fs/promises';
+import { basename, extname, resolve } from 'path';
+import { glob } from 'glob';
+import chokidar from 'chokidar';
+import PQueue from 'p-queue';
+import { getConfigValue } from '../core/config.js';
+import { getVectorStore } from '../core/vector-store.js';
+import { createChildLogger } from '../utils/logger.js';
+import { hashContent } from '../utils/hashing.js';
+import { DocumentChunker } from './chunker.js';
+import { getEmbeddingProvider } from './provider.js';
+const logger = createChildLogger('ingestion');
+export class DocumentIngestionService {
     chunker;
     queue;
     watcher = null;
     fileHashes = new Map();
     constructor() {
-        this.chunker = new chunker_js_1.DocumentChunker();
-        this.queue = new p_queue_1.default({ concurrency: 5 });
+        this.chunker = new DocumentChunker();
+        this.queue = new PQueue({ concurrency: 5 });
     }
     async ingestDirectory(directoryPath, options = {}) {
-        const ingestionConfig = (0, config_js_1.getConfigValue)('ingestion');
+        const ingestionConfig = getConfigValue('ingestion');
         const stats = {
             totalFiles: 0,
             processedFiles: 0,
@@ -35,14 +29,14 @@ class DocumentIngestionService {
             errors: [],
             startTime: new Date(),
         };
-        const resolvedPath = (0, path_1.resolve)(directoryPath);
+        const resolvedPath = resolve(directoryPath);
         logger.info('Starting directory ingestion', { path: resolvedPath });
         // Build glob patterns
         const includePatterns = ingestionConfig.supportedExtensions.map((ext) => `**/*${ext}`);
         // Get all matching files
         const files = [];
         for (const pattern of includePatterns) {
-            const matches = await (0, glob_1.glob)(pattern, {
+            const matches = await glob(pattern, {
                 cwd: resolvedPath,
                 absolute: true,
                 ignore: ingestionConfig.excludePatterns,
@@ -55,9 +49,9 @@ class DocumentIngestionService {
         stats.totalFiles = uniqueFiles.length;
         logger.info('Found files to process', { count: uniqueFiles.length });
         // Initialize services
-        const vectorStore = (0, vector_store_js_1.getVectorStore)();
+        const vectorStore = getVectorStore();
         await vectorStore.initialize();
-        const embeddingProvider = (0, provider_js_1.getEmbeddingProvider)();
+        const embeddingProvider = getEmbeddingProvider();
         // Process files in parallel with queue
         const processPromises = uniqueFiles.map((filePath) => this.queue.add(async () => {
             try {
@@ -93,16 +87,16 @@ class DocumentIngestionService {
         return stats;
     }
     async processFile(filePath, vectorStore, embeddingProvider, options) {
-        const ingestionConfig = (0, config_js_1.getConfigValue)('ingestion');
+        const ingestionConfig = getConfigValue('ingestion');
         // Check file size
-        const fileStat = await (0, promises_1.stat)(filePath);
+        const fileStat = await stat(filePath);
         if (fileStat.size > ingestionConfig.maxFileSize) {
             logger.debug('File too large, skipping', { filePath, size: fileStat.size });
             return { skipped: true, chunks: 0 };
         }
         // Read file content
-        const content = await (0, promises_1.readFile)(filePath, 'utf-8');
-        const contentHash = (0, hashing_js_1.hashContent)(content);
+        const content = await readFile(filePath, 'utf-8');
+        const contentHash = hashContent(content);
         // Check if file has changed
         if (!options.forceReindex) {
             const existingHash = this.fileHashes.get(filePath);
@@ -120,8 +114,8 @@ class DocumentIngestionService {
         // Delete existing documents for this file
         await vectorStore.deleteByFilePath(filePath);
         // Chunk the document
-        const fileName = (0, path_1.basename)(filePath);
-        const fileType = (0, path_1.extname)(filePath);
+        const fileName = basename(filePath);
+        const fileType = extname(filePath);
         const chunks = this.chunker.chunkDocument(content, filePath, fileName, fileType, options.projectName);
         if (chunks.length === 0) {
             return { skipped: true, chunks: 0 };
@@ -142,37 +136,37 @@ class DocumentIngestionService {
         return { skipped: false, chunks: chunks.length };
     }
     async ingestFile(filePath, options = {}) {
-        const vectorStore = (0, vector_store_js_1.getVectorStore)();
+        const vectorStore = getVectorStore();
         await vectorStore.initialize();
-        const embeddingProvider = (0, provider_js_1.getEmbeddingProvider)();
-        const result = await this.processFile((0, path_1.resolve)(filePath), vectorStore, embeddingProvider, { ...options, forceReindex: true });
+        const embeddingProvider = getEmbeddingProvider();
+        const result = await this.processFile(resolve(filePath), vectorStore, embeddingProvider, { ...options, forceReindex: true });
         return { chunks: result.chunks };
     }
     async removeFile(filePath) {
-        const vectorStore = (0, vector_store_js_1.getVectorStore)();
+        const vectorStore = getVectorStore();
         await vectorStore.initialize();
-        await vectorStore.deleteByFilePath((0, path_1.resolve)(filePath));
-        this.fileHashes.delete((0, path_1.resolve)(filePath));
+        await vectorStore.deleteByFilePath(resolve(filePath));
+        this.fileHashes.delete(resolve(filePath));
         logger.info('File removed from index', { filePath });
     }
     startWatching(directoryPath, options = {}) {
-        const ingestionConfig = (0, config_js_1.getConfigValue)('ingestion');
-        const resolvedPath = (0, path_1.resolve)(directoryPath);
+        const ingestionConfig = getConfigValue('ingestion');
+        const resolvedPath = resolve(directoryPath);
         logger.info('Starting file watcher', { path: resolvedPath });
-        this.watcher = chokidar_1.default.watch(resolvedPath, {
+        this.watcher = chokidar.watch(resolvedPath, {
             ignored: ingestionConfig.excludePatterns,
             persistent: true,
             ignoreInitial: true,
         });
         this.watcher.on('add', async (filePath) => {
-            const ext = (0, path_1.extname)(filePath);
+            const ext = extname(filePath);
             if (ingestionConfig.supportedExtensions.includes(ext)) {
                 logger.info('New file detected', { filePath });
                 await this.ingestFile(filePath, options);
             }
         });
         this.watcher.on('change', async (filePath) => {
-            const ext = (0, path_1.extname)(filePath);
+            const ext = extname(filePath);
             if (ingestionConfig.supportedExtensions.includes(ext)) {
                 logger.info('File change detected', { filePath });
                 await this.ingestFile(filePath, options);
@@ -191,14 +185,12 @@ class DocumentIngestionService {
         }
     }
 }
-exports.DocumentIngestionService = DocumentIngestionService;
 // Singleton instance
 let ingestionServiceInstance = null;
-const getIngestionService = () => {
+export const getIngestionService = () => {
     if (!ingestionServiceInstance) {
         ingestionServiceInstance = new DocumentIngestionService();
     }
     return ingestionServiceInstance;
 };
-exports.getIngestionService = getIngestionService;
 //# sourceMappingURL=ingestion.js.map

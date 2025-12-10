@@ -128,11 +128,10 @@ export const ConfigSchema = z.object({
     host: z.string().default('localhost'),
     port: z.number().default(8000),
     collection: z.string().default('claude_rag_documents'),
-    embeddingFunction: z.string().default('openai'),
     persistDirectory: z.string().default('./.chromadb'),
   }),
   embeddings: z.object({
-    provider: z.enum(['openai', 'anthropic', 'local']).default('openai'),
+    provider: z.enum(['openai', 'anthropic', 'local', 'chroma']).default('chroma'),
     model: z.string().default('text-embedding-3-small'),
     dimensions: z.number().default(1536),
     batchSize: z.number().default(100),

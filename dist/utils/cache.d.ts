@@ -1,4 +1,4 @@
-export declare class CacheManager<T> {
+export declare class CacheManager<T extends object> {
     private cache;
     private enabled;
     constructor(options?: {
@@ -15,5 +15,5 @@ export declare class CacheManager<T> {
     keys(): string[];
 }
 export declare const getEmbeddingCache: () => CacheManager<number[]>;
-export declare const getRetrievalCache: () => CacheManager<unknown>;
+export declare const getRetrievalCache: () => CacheManager<unknown[]>;
 //# sourceMappingURL=cache.d.ts.map

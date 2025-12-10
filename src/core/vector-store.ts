@@ -177,7 +177,11 @@ export class VectorStore {
 
   async listCollections(): Promise<string[]> {
     const collections = await this.client.listCollections();
-    return collections.map((c) => c.name);
+    return collections.map((c: unknown) => {
+      if (typeof c === 'string') return c;
+      if (c && typeof c === 'object' && 'name' in c) return String((c as { name: unknown }).name);
+      return String(c);
+    });
   }
 
   async deleteCollection(): Promise<void> {

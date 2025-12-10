@@ -105,37 +105,34 @@ export declare const ConfigSchema: z.ZodObject<{
         host: z.ZodDefault<z.ZodString>;
         port: z.ZodDefault<z.ZodNumber>;
         collection: z.ZodDefault<z.ZodString>;
-        embeddingFunction: z.ZodDefault<z.ZodString>;
         persistDirectory: z.ZodDefault<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         host: string;
         port: number;
         collection: string;
-        embeddingFunction: string;
         persistDirectory: string;
     }, {
         host?: string | undefined;
         port?: number | undefined;
         collection?: string | undefined;
-        embeddingFunction?: string | undefined;
         persistDirectory?: string | undefined;
     }>;
     embeddings: z.ZodObject<{
-        provider: z.ZodDefault<z.ZodEnum<["openai", "anthropic", "local"]>>;
+        provider: z.ZodDefault<z.ZodEnum<["openai", "anthropic", "local", "chroma"]>>;
         model: z.ZodDefault<z.ZodString>;
         dimensions: z.ZodDefault<z.ZodNumber>;
         batchSize: z.ZodDefault<z.ZodNumber>;
         maxRetries: z.ZodDefault<z.ZodNumber>;
         retryDelay: z.ZodDefault<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
-        provider: "openai" | "anthropic" | "local";
+        provider: "openai" | "anthropic" | "local" | "chroma";
         model: string;
         dimensions: number;
         batchSize: number;
         maxRetries: number;
         retryDelay: number;
     }, {
-        provider?: "openai" | "anthropic" | "local" | undefined;
+        provider?: "openai" | "anthropic" | "local" | "chroma" | undefined;
         model?: string | undefined;
         dimensions?: number | undefined;
         batchSize?: number | undefined;
@@ -342,11 +339,10 @@ export declare const ConfigSchema: z.ZodObject<{
         host: string;
         port: number;
         collection: string;
-        embeddingFunction: string;
         persistDirectory: string;
     };
     embeddings: {
-        provider: "openai" | "anthropic" | "local";
+        provider: "openai" | "anthropic" | "local" | "chroma";
         model: string;
         dimensions: number;
         batchSize: number;
@@ -413,11 +409,10 @@ export declare const ConfigSchema: z.ZodObject<{
         host?: string | undefined;
         port?: number | undefined;
         collection?: string | undefined;
-        embeddingFunction?: string | undefined;
         persistDirectory?: string | undefined;
     };
     embeddings: {
-        provider?: "openai" | "anthropic" | "local" | undefined;
+        provider?: "openai" | "anthropic" | "local" | "chroma" | undefined;
         model?: string | undefined;
         dimensions?: number | undefined;
         batchSize?: number | undefined;

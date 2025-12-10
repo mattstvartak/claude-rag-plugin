@@ -16,6 +16,14 @@ export declare class OpenAIEmbeddingProvider implements EmbeddingProvider {
     private processBatch;
     generateEmbedding(text: string): Promise<number[]>;
 }
+export declare class ChromaEmbeddingProvider implements EmbeddingProvider {
+    private client;
+    private cache;
+    private dimensions;
+    constructor();
+    generateEmbeddings(request: EmbeddingRequest): Promise<EmbeddingResponse>;
+    generateEmbedding(text: string): Promise<number[]>;
+}
 export declare function createEmbeddingProvider(): EmbeddingProvider;
 export declare const getEmbeddingProvider: () => EmbeddingProvider;
 //# sourceMappingURL=provider.d.ts.map

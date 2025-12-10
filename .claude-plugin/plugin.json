@@ -1,0 +1,35 @@
+{
+  "name": "claude-rag",
+  "description": "Index your codebase once, then let Claude automatically retrieve relevant context before making changes. Reduces API costs by providing targeted context instead of reading entire files. Semantic search, pattern detection, and dependency tracking powered by ChromaDB.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Claude RAG Plugin"
+  },
+  "keywords": [
+    "rag",
+    "vector-search",
+    "chromadb",
+    "embeddings",
+    "codebase-analysis",
+    "semantic-search",
+    "context-aware"
+  ],
+  "repository": "https://github.com/yourusername/claude-rag-plugin",
+  "license": "MIT",
+  "engines": {
+    "claude-code": ">=1.0.0"
+  },
+  "mcp": {
+    "server": "./dist/mcp/server.js",
+    "env": {
+      "CHROMADB_HOST": "localhost",
+      "CHROMADB_PORT": "8000"
+    }
+  },
+  "capabilities": [
+    "semantic-search",
+    "code-analysis",
+    "pattern-detection",
+    "dependency-tracking"
+  ]
+}

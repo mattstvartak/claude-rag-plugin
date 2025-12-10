@@ -1,23 +1,20 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.getRetrievalCache = exports.getEmbeddingCache = exports.CacheManager = void 0;
-const lru_cache_1 = require("lru-cache");
-const config_js_1 = require("../core/config.js");
-const logger_js_1 = require("./logger.js");
-const logger = (0, logger_js_1.createChildLogger)('cache');
-class CacheManager {
+import { LRUCache } from 'lru-cache';
+import { getConfigValue } from '../core/config.js';
+import { createChildLogger } from './logger.js';
+const logger = createChildLogger('cache');
+export class CacheManager {
     cache;
     enabled;
     constructor(options) {
         let cacheConfig;
         try {
-            cacheConfig = (0, config_js_1.getConfigValue)('cache');
+            cacheConfig = getConfigValue('cache');
         }
         catch {
             cacheConfig = { enabled: true, maxSize: 1000, ttl: 3600000 };
         }
         this.enabled = options?.enabled ?? cacheConfig.enabled;
-        this.cache = new lru_cache_1.LRUCache({
+        this.cache = new LRUCache({
             max: options?.maxSize ?? cacheConfig.maxSize,
             ttl: options?.ttl ?? cacheConfig.ttl,
         });
@@ -59,22 +56,19 @@ class CacheManager {
         return [...this.cache.keys()];
     }
 }
-exports.CacheManager = CacheManager;
 // Singleton instances for common cache types
 let embeddingCache = null;
 let retrievalCache = null;
-const getEmbeddingCache = () => {
+export const getEmbeddingCache = () => {
     if (!embeddingCache) {
         embeddingCache = new CacheManager();
     }
     return embeddingCache;
 };
-exports.getEmbeddingCache = getEmbeddingCache;
-const getRetrievalCache = () => {
+export const getRetrievalCache = () => {
     if (!retrievalCache) {
         retrievalCache = new CacheManager();
     }
     return retrievalCache;
 };
-exports.getRetrievalCache = getRetrievalCache;
 //# sourceMappingURL=cache.js.map

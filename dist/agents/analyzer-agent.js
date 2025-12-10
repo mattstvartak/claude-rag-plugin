@@ -1,13 +1,10 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.AnalyzerAgent = void 0;
-const base_agent_js_1 = require("./base-agent.js");
-const config_js_1 = require("../core/config.js");
-const logger_js_1 = require("../utils/logger.js");
-const logger = (0, logger_js_1.createChildLogger)('analyzer-agent');
-class AnalyzerAgent extends base_agent_js_1.BaseAgent {
+import { BaseAgent } from './base-agent.js';
+import { getConfigValue } from '../core/config.js';
+import { createChildLogger } from '../utils/logger.js';
+const logger = createChildLogger('analyzer-agent');
+export class AnalyzerAgent extends BaseAgent {
     constructor() {
-        const agentConfig = (0, config_js_1.getConfigValue)('agents').analyzer;
+        const agentConfig = getConfigValue('agents').analyzer;
         super({
             role: 'analyzer',
             model: agentConfig.model,
@@ -274,5 +271,4 @@ Format as JSON:
         };
     }
 }
-exports.AnalyzerAgent = AnalyzerAgent;
 //# sourceMappingURL=analyzer-agent.js.map
