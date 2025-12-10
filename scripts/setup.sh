@@ -80,6 +80,8 @@ fi
 # Step 3: Register MCP server with Claude Code
 echo "🔧 Registering MCP server..."
 if command -v claude &> /dev/null; then
+    # Remove existing server if it exists, then add fresh
+    claude mcp remove claude-rag 2>/dev/null || true
     claude mcp add claude-rag -- node "$PLUGIN_DIR/dist/mcp/server.js" 2>/dev/null || true
     echo "✅ MCP server registered!"
 else
