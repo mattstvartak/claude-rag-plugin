@@ -2,6 +2,26 @@
 
 Index your codebase once, then let Claude automatically retrieve relevant context before making changes. Reduces API costs by providing targeted context instead of reading entire files.
 
+## Prerequisites
+
+Before installing, ensure you have:
+
+- **Docker** - Required to run ChromaDB vector database
+  ```bash
+  # Verify Docker is installed
+  docker --version
+  ```
+- **Node.js 18+** - Required for the plugin runtime
+  ```bash
+  # Verify Node.js version
+  node --version
+  ```
+- **Claude Code CLI** - The plugin runs inside Claude Code
+  ```bash
+  # Verify Claude Code is installed
+  claude --version
+  ```
+
 ## Features
 
 - **One-Click Install**: Automatic setup via Claude Code marketplace
@@ -271,10 +291,14 @@ const status = await rag.getStatus();
 
 ## Requirements
 
-- Node.js >= 18
-- ChromaDB server running (Docker recommended)
-- **No API keys required by default!** Uses ChromaDB's built-in embeddings
-- Optional: OpenAI API key for higher-quality embeddings (set `OPENAI_API_KEY`)
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Docker | Any recent version | Required for ChromaDB |
+| Node.js | >= 18 | Runtime environment |
+| Claude Code CLI | >= 1.0.0 | Plugin host |
+| OpenAI API Key | Optional | For higher-quality embeddings |
+
+**No API keys required by default!** The plugin uses ChromaDB's built-in sentence-transformer embeddings.
 
 ## Troubleshooting
 
