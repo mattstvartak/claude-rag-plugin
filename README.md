@@ -306,7 +306,7 @@ const status = await rag.getStatus();
 
 ```bash
 # Check if ChromaDB is running
-curl http://localhost:8000/api/v1/heartbeat
+curl http://localhost:8000/api/v2/heartbeat
 
 # Restart ChromaDB
 docker restart <container-id>

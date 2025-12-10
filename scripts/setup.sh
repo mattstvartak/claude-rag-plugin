@@ -63,13 +63,13 @@ if [ "$DOCKER_AVAILABLE" = true ]; then
     # Wait for ChromaDB to be ready
     echo "⏳ Waiting for ChromaDB to be ready..."
     for i in {1..30}; do
-        if curl -s http://localhost:8000/api/v1/heartbeat > /dev/null 2>&1; then
+        if curl -s http://localhost:8000/api/v2/heartbeat > /dev/null 2>&1; then
             echo "✅ ChromaDB is ready!"
             break
         fi
         if [ $i -eq 30 ]; then
             echo "⚠️  ChromaDB didn't respond in time. It may still be starting up."
-            echo "   Check status with: curl http://localhost:8000/api/v1/heartbeat"
+            echo "   Check status with: curl http://localhost:8000/api/v2/heartbeat"
         fi
         sleep 1
     done
