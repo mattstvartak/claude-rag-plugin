@@ -12,7 +12,9 @@ echo "🚀 Setting up Claude RAG Plugin..."
 # Step 1: Install dependencies and build
 echo "📦 Installing dependencies..."
 cd "$PLUGIN_DIR"
-npm install --silent
+# Clear any stale lock files that might cause conflicts
+rm -rf node_modules/.package-lock.json 2>/dev/null
+npm install --silent 2>/dev/null || npm install --no-package-lock --silent
 npm run build --silent
 
 # Step 2: Start ChromaDB via Docker

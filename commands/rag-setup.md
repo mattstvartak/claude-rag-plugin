@@ -20,7 +20,7 @@ for i in {1..30}; do curl -s http://localhost:8000/api/v2/heartbeat && break || 
 
 3. Install plugin dependencies and build:
 ```bash
-cd "$(dirname "$(dirname "$0")")" && npm install && npm run build
+cd "$(dirname "$(dirname "$0")")" && rm -rf node_modules/.package-lock.json package-lock.json 2>/dev/null; npm install --no-package-lock && npm run build
 ```
 
 4. Add MCP server to Claude Code settings:
