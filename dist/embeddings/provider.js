@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import PQueue from 'p-queue';
 import pRetry from 'p-retry';
-import { ChromaClient, IncludeEnum } from 'chromadb';
+import { ChromaClient, DefaultEmbeddingFunction } from 'chromadb';
 import { getConfigValue } from '../core/config.js';
 import { createChildLogger } from '../utils/logger.js';
 import { getEmbeddingCache } from '../utils/cache.js';
@@ -134,6 +134,7 @@ export class OpenAIEmbeddingProvider {
 // ChromaDB's built-in embedding function (no API key required)
 export class ChromaEmbeddingProvider {
     client;
+    embeddingFunction;
     cache = getEmbeddingCache();
     dimensions = 384; // Default for all-MiniLM-L6-v2
     constructor() {
@@ -141,6 +142,8 @@ export class ChromaEmbeddingProvider {
         this.client = new ChromaClient({
             path: `http://${chromaConfig.host}:${chromaConfig.port}`,
         });
+        // Use ChromaDB's default embedding function (all-MiniLM-L6-v2)
+        this.embeddingFunction = new DefaultEmbeddingFunction();
     }
     async generateEmbeddings(request) {
         const embeddings = [];
@@ -166,49 +169,23 @@ export class ChromaEmbeddingProvider {
                 usage: { promptTokens: 0, totalTokens: 0 },
             };
         }
-        // Use ChromaDB's embedding endpoint
-        // ChromaDB uses sentence-transformers by default
-        logger.info('Generating embeddings via ChromaDB', { count: uncachedTexts.length });
-        // ChromaDB doesn't expose a direct embedding API, so we create a temp collection
-        const tempCollectionName = `temp_embed_${Date.now()}`;
+        logger.info('Generating embeddings via ChromaDB DefaultEmbeddingFunction', { count: uncachedTexts.length });
         try {
-            const collection = await this.client.createCollection({
-                name: tempCollectionName,
+            // Use the embedding function directly to generate embeddings
+            const generatedEmbeddings = await this.embeddingFunction.generate(uncachedTexts);
+            // Map generated embeddings back to original indices and cache them
+            generatedEmbeddings.forEach((embedding, i) => {
+                if (embedding) {
+                    const originalIndex = uncachedIndices[i];
+                    embeddings[originalIndex] = embedding;
+                    const text = uncachedTexts[i];
+                    const cacheKey = `chroma:${hashContent(text)}`;
+                    this.cache.set(cacheKey, embedding);
+                }
             });
-            // Add documents to get embeddings
-            const ids = uncachedTexts.map((_, i) => `temp_${i}`);
-            await collection.add({
-                ids,
-                documents: uncachedTexts,
-            });
-            // Retrieve with embeddings
-            const results = await collection.get({
-                ids,
-                include: [IncludeEnum.Embeddings],
-            });
-            // Extract embeddings and cache them
-            if (results.embeddings) {
-                results.embeddings.forEach((embedding, i) => {
-                    if (embedding) {
-                        const originalIndex = uncachedIndices[i];
-                        embeddings[originalIndex] = embedding;
-                        const text = uncachedTexts[i];
-                        const cacheKey = `chroma:${hashContent(text)}`;
-                        this.cache.set(cacheKey, embedding);
-                    }
-                });
-            }
-            // Cleanup temp collection
-            await this.client.deleteCollection({ name: tempCollectionName });
         }
         catch (error) {
-            // Try to cleanup on error
-            try {
-                await this.client.deleteCollection({ name: tempCollectionName });
-            }
-            catch {
-                // Ignore cleanup errors
-            }
+            logger.error('Failed to generate embeddings', { error });
             throw error;
         }
         return {

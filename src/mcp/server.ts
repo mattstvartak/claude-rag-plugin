@@ -342,21 +342,32 @@ async function createMCPServer() {
 
           const stats = await ingestionService.ingestDirectory(path, options);
 
+          // Include error details if there were errors
+          const errorDetails = stats.errors.length > 0
+            ? stats.errors.slice(0, 10).map(e => ({ file: e.file, error: e.error }))
+            : [];
+
           return {
             content: [{
               type: 'text',
               text: JSON.stringify({
-                success: true,
+                success: stats.errors.length === 0,
                 stats: {
                   totalFiles: stats.totalFiles,
                   processedFiles: stats.processedFiles,
                   skippedFiles: stats.skippedFiles,
                   totalChunks: stats.totalChunks,
-                  errors: stats.errors.length,
+                  errorCount: stats.errors.length,
                   duration: stats.endTime
                     ? `${(stats.endTime.getTime() - stats.startTime.getTime()) / 1000}s`
                     : 'in progress',
                 },
+                ...(errorDetails.length > 0 && {
+                  sampleErrors: errorDetails,
+                  note: stats.errors.length > 10
+                    ? `Showing first 10 of ${stats.errors.length} errors`
+                    : undefined,
+                }),
               }, null, 2),
             }],
           };

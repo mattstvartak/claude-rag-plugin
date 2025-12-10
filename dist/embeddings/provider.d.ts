@@ -18,6 +18,7 @@ export declare class OpenAIEmbeddingProvider implements EmbeddingProvider {
 }
 export declare class ChromaEmbeddingProvider implements EmbeddingProvider {
     private client;
+    private embeddingFunction;
     private cache;
     private dimensions;
     constructor();

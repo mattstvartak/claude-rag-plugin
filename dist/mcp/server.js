@@ -6,7 +6,6 @@ import { getConfigValue } from '../core/config.js';
 import { getVectorStore } from '../core/vector-store.js';
 import { getIngestionService } from '../embeddings/ingestion.js';
 import { getRetriever } from '../retrieval/retriever.js';
-import { createOrchestrator } from '../agents/orchestrator.js';
 import { createChildLogger } from '../utils/logger.js';
 const logger = createChildLogger('mcp-server');
 // Tool definitions - designed for automatic usage by Claude Code
@@ -184,7 +183,6 @@ async function createMCPServer() {
     const vectorStore = getVectorStore();
     const ingestionService = getIngestionService();
     const retriever = getRetriever();
-    const orchestrator = createOrchestrator();
     async function ensureInitialized() {
         if (!servicesInitialized) {
             await vectorStore.initialize();
@@ -276,9 +274,24 @@ async function createMCPServer() {
                 case 'rag_query': {
                     await ensureInitialized();
                     const question = args?.['question'];
-                    const response = await orchestrator.query(question);
+                    // Search for relevant code and return results for Claude to interpret
+                    const results = await retriever.retrieve({ query: question, topK: 10 });
                     return {
-                        content: [{ type: 'text', text: response }],
+                        content: [{
+                                type: 'text',
+                                text: JSON.stringify({
+                                    question,
+                                    relevantCode: results.map(r => ({
+                                        file: r.document.metadata.filePath,
+                                        lines: `${r.document.metadata.startLine}-${r.document.metadata.endLine}`,
+                                        score: (r.score * 100).toFixed(1) + '%',
+                                        language: r.document.metadata.language || 'unknown',
+                                        content: r.document.content,
+                                    })),
+                                    totalResults: results.length,
+                                    hint: 'Use these code snippets to answer the question about the codebase.',
+                                }, null, 2),
+                            }],
                     };
                 }
                 case 'rag_index': {
@@ -291,21 +304,31 @@ async function createMCPServer() {
                     if (forceReindex !== undefined)
                         options.forceReindex = forceReindex;
                     const stats = await ingestionService.ingestDirectory(path, options);
+                    // Include error details if there were errors
+                    const errorDetails = stats.errors.length > 0
+                        ? stats.errors.slice(0, 10).map(e => ({ file: e.file, error: e.error }))
+                        : [];
                     return {
                         content: [{
                                 type: 'text',
                                 text: JSON.stringify({
-                                    success: true,
+                                    success: stats.errors.length === 0,
                                     stats: {
                                         totalFiles: stats.totalFiles,
                                         processedFiles: stats.processedFiles,
                                         skippedFiles: stats.skippedFiles,
                                         totalChunks: stats.totalChunks,
-                                        errors: stats.errors.length,
+                                        errorCount: stats.errors.length,
                                         duration: stats.endTime
                                             ? `${(stats.endTime.getTime() - stats.startTime.getTime()) / 1000}s`
                                             : 'in progress',
                                     },
+                                    ...(errorDetails.length > 0 && {
+                                        sampleErrors: errorDetails,
+                                        note: stats.errors.length > 10
+                                            ? `Showing first 10 of ${stats.errors.length} errors`
+                                            : undefined,
+                                    }),
                                 }, null, 2),
                             }],
                     };
@@ -337,19 +360,20 @@ async function createMCPServer() {
                         query: `${pattern} pattern implementation example`,
                         topK: 10,
                     });
-                    // Ask orchestrator for pattern analysis
-                    const analysis = await orchestrator.query(`Analyze the coding patterns for "${pattern}" in the codebase. ` +
-                        `What conventions are used? Provide specific examples.`);
+                    // Return examples for Claude to analyze
                     return {
                         content: [{
                                 type: 'text',
                                 text: JSON.stringify({
                                     pattern,
-                                    examples: results.slice(0, 5).map(r => ({
+                                    examples: results.slice(0, 8).map(r => ({
                                         file: r.document.metadata.filePath,
-                                        content: r.document.content.slice(0, 500),
+                                        lines: `${r.document.metadata.startLine}-${r.document.metadata.endLine}`,
+                                        score: (r.score * 100).toFixed(1) + '%',
+                                        content: r.document.content,
                                     })),
-                                    analysis,
+                                    totalResults: results.length,
+                                    hint: `Analyze these code examples to identify patterns for "${pattern}". Look for conventions, common approaches, and best practices used in this codebase.`,
                                 }, null, 2),
                             }],
                     };
@@ -554,7 +578,12 @@ async function main() {
     logger.info('Claude RAG MCP Server running');
 }
 main().catch((error) => {
-    logger.error('Failed to start MCP server', { error });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    logger.error('Failed to start MCP server', { error: errorMessage, stack: errorStack });
+    console.error('MCP Server Error:', errorMessage);
+    if (errorStack)
+        console.error(errorStack);
     process.exit(1);
 });
 //# sourceMappingURL=server.js.map
