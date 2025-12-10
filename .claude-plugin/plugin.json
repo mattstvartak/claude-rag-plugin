@@ -7,14 +7,7 @@
   },
   "repository": "https://github.com/mattstvartak/claude-rag-plugin",
   "license": "MIT",
-  "install": {
-    "script": "./scripts/setup.sh",
-    "requirements": {
-      "docker": "Docker is required to run ChromaDB"
-    }
-  },
-  "mcp": {
-    "server": "./dist/mcp/server.js",
-    "name": "claude-rag"
-  }
+  "commands": "./commands/",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./mcp-servers.json"
 }
