@@ -1,6 +1,9 @@
 {
-  "claude-rag": {
-    "command": "node",
-    "args": ["./dist/mcp/server.js"]
+  "mcpServers": {
+    "claude-rag": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/mcp/server.js"],
+      "cwd": "${CLAUDE_PLUGIN_ROOT}"
+    }
   }
 }
