@@ -8,7 +8,7 @@ export const ConfigSchema = z.object({
         persistDirectory: z.string().default('./.chromadb'),
     }),
     embeddings: z.object({
-        provider: z.enum(['openai', 'anthropic', 'local', 'chroma']).default('chroma'),
+        provider: z.enum(['openai', 'anthropic', 'local', 'chroma', 'voyage']).default('chroma'),
         model: z.string().default('text-embedding-3-small'),
         dimensions: z.number().default(1536),
         batchSize: z.number().default(100),
@@ -36,6 +36,11 @@ export const ConfigSchema = z.object({
         excludePatterns: z.array(z.string()),
         maxFileSize: z.number().default(1048576),
         watchMode: z.boolean().default(false),
+        pdf: z.object({
+            maxSizeMB: z.number().default(50),
+            timeoutMs: z.number().default(60000),
+            chunkSize: z.number().default(1500),
+        }).optional(),
     }),
     agents: z.object({
         orchestrator: z.object({

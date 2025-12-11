@@ -2,10 +2,11 @@ import OpenAI from 'openai';
 import PQueue from 'p-queue';
 import pRetry from 'p-retry';
 import { ChromaClient, IncludeEnum, DefaultEmbeddingFunction } from 'chromadb';
+import { VoyageAIClient } from 'voyageai';
 import { getConfigValue } from '../core/config.js';
 import { EmbeddingRequest, EmbeddingResponse } from '../core/types.js';
 import { createChildLogger } from '../utils/logger.js';
-import { getEmbeddingCache } from '../utils/cache.js';
+import { getPersistentEmbeddingCache } from '../utils/cache.js';
 import { hashContent } from '../utils/hashing.js';
 
 const logger = createChildLogger('embeddings');
@@ -22,7 +23,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private queue: PQueue;
   private maxRetries: number;
   private retryDelay: number;
-  private cache = getEmbeddingCache();
+  private cache = getPersistentEmbeddingCache();
 
   constructor() {
     const embeddingConfig = getConfigValue('embeddings');
@@ -171,11 +172,137 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
+// Voyage AI embeddings - optimized for code, generous free tier
+export class VoyageEmbeddingProvider implements EmbeddingProvider {
+  private client: VoyageAIClient;
+  private model: string;
+  private cache = getPersistentEmbeddingCache();
+  private queue: PQueue;
+
+  constructor() {
+    const apiKey = process.env['VOYAGE_API_KEY'];
+    if (!apiKey) {
+      throw new Error('VOYAGE_API_KEY environment variable is required for Voyage embeddings');
+    }
+
+    this.client = new VoyageAIClient({ apiKey });
+    // voyage-code-3 is optimized for code retrieval
+    // voyage-3-lite is a good balance of quality/cost
+    this.model = process.env['VOYAGE_MODEL'] || 'voyage-code-3';
+
+    // Rate limiting - Voyage has generous limits
+    this.queue = new PQueue({
+      concurrency: 5,
+      intervalCap: 300,
+      interval: 60000, // 300 requests per minute
+    });
+
+    logger.info('Using Voyage AI embeddings', { model: this.model });
+  }
+
+  async generateEmbeddings(request: EmbeddingRequest): Promise<EmbeddingResponse> {
+    const embeddings: number[][] = [];
+
+    // Check cache first
+    const uncachedTexts: string[] = [];
+    const uncachedIndices: number[] = [];
+
+    for (let i = 0; i < request.texts.length; i++) {
+      const text = request.texts[i]!;
+      const cacheKey = `voyage:${this.model}:${hashContent(text)}`;
+      const cached = this.cache.get(cacheKey);
+      if (cached) {
+        embeddings[i] = cached;
+      } else {
+        uncachedTexts.push(text);
+        uncachedIndices.push(i);
+      }
+    }
+
+    if (uncachedTexts.length === 0) {
+      logger.debug('All embeddings found in cache', { count: request.texts.length });
+      return {
+        embeddings,
+        model: this.model,
+        usage: { promptTokens: 0, totalTokens: 0 },
+      };
+    }
+
+    logger.info('Generating embeddings via Voyage AI', {
+      count: uncachedTexts.length,
+      model: this.model,
+    });
+
+    // Process in batches (Voyage supports up to 128 texts per request)
+    const batchSize = 128;
+    let totalTokens = 0;
+
+    for (let i = 0; i < uncachedTexts.length; i += batchSize) {
+      const batchTexts = uncachedTexts.slice(i, i + batchSize);
+      const batchIndices = uncachedIndices.slice(i, i + batchSize);
+
+      const response = await this.queue.add(() =>
+        pRetry(
+          async () => {
+            return await this.client.embed({
+              input: batchTexts,
+              model: this.model,
+              inputType: 'document', // or 'query' for search queries
+            });
+          },
+          {
+            retries: 3,
+            minTimeout: 1000,
+            onFailedAttempt: (error) => {
+              logger.warn('Voyage embedding request failed, retrying', {
+                attempt: error.attemptNumber,
+                retriesLeft: error.retriesLeft,
+              });
+            },
+          }
+        )
+      );
+
+      if (!response || !response.data) {
+        throw new Error('Failed to generate Voyage embeddings');
+      }
+
+      // Map embeddings back to original indices and cache
+      response.data.forEach((item, j) => {
+        const originalIndex = batchIndices[j]!;
+        const embedding = item.embedding;
+        if (embedding) {
+          embeddings[originalIndex] = embedding;
+
+          const text = batchTexts[j]!;
+          const cacheKey = `voyage:${this.model}:${hashContent(text)}`;
+          this.cache.set(cacheKey, embedding);
+        }
+      });
+
+      if (response.usage?.totalTokens) {
+        totalTokens += response.usage.totalTokens;
+      }
+    }
+
+    return {
+      embeddings,
+      model: this.model,
+      usage: { promptTokens: totalTokens, totalTokens },
+    };
+  }
+
+  async generateEmbedding(text: string): Promise<number[]> {
+    const response = await this.generateEmbeddings({ texts: [text] });
+    return response.embeddings[0]!;
+  }
+}
+
 // ChromaDB's built-in embedding function (no API key required)
 export class ChromaEmbeddingProvider implements EmbeddingProvider {
   private client: ChromaClient;
   private embeddingFunction: DefaultEmbeddingFunction;
-  private cache = getEmbeddingCache();
+  private cache = getPersistentEmbeddingCache();
   private dimensions = 384; // Default for all-MiniLM-L6-v2
 
   constructor() {
@@ -260,9 +387,20 @@ export function createEmbeddingProvider(): EmbeddingProvider {
         return new ChromaEmbeddingProvider();
       }
       return new OpenAIEmbeddingProvider();
+    case 'voyage':
+      if (!process.env['VOYAGE_API_KEY']) {
+        logger.warn('VOYAGE_API_KEY not set, falling back to ChromaDB embeddings');
+        return new ChromaEmbeddingProvider();
+      }
+      return new VoyageEmbeddingProvider();
     case 'chroma':
       return new ChromaEmbeddingProvider();
     default:
+      // Check if Voyage API key is available (preferred for code)
+      if (process.env['VOYAGE_API_KEY']) {
+        logger.info('VOYAGE_API_KEY found, using Voyage AI embeddings (optimized for code)');
+        return new VoyageEmbeddingProvider();
+      }
       // Default to ChromaDB's built-in embeddings (no API key required)
       logger.info('Using ChromaDB default embeddings (no API key required)');
       return new ChromaEmbeddingProvider();

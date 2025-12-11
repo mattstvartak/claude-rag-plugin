@@ -296,9 +296,301 @@ export class DocumentChunker {
     isMarkdownFile(fileType) {
         return ['.md', '.mdx'].includes(fileType.toLowerCase());
     }
+    isPDFFile(fileType) {
+        return fileType.toLowerCase() === '.pdf';
+    }
     estimateTokenCount(text) {
         // Rough estimation: ~4 characters per token
         return Math.ceil(text.length / 4);
+    }
+    /**
+     * Chunk a PDF document, optionally using page information for better boundaries
+     */
+    chunkPDFDocument(content, sourcePath, documentName, projectName, options) {
+        const chunks = [];
+        const pages = options?.pages;
+        // If we have page information, chunk by pages
+        if (pages && pages.length > 0) {
+            return this.chunkPDFByPages(pages, sourcePath, documentName, projectName);
+        }
+        // Otherwise, use text-based chunking with larger chunks for PDFs
+        const rawChunks = this.chunkPDFText(content);
+        const now = new Date().toISOString();
+        rawChunks.forEach((chunk, index) => {
+            const metadata = {
+                filePath: sourcePath,
+                fileName: documentName,
+                fileType: '.pdf',
+                language: 'pdf',
+                chunkIndex: index,
+                totalChunks: rawChunks.length,
+                startLine: chunk.startPage,
+                endLine: chunk.endPage,
+                createdAt: now,
+                updatedAt: now,
+                hash: hashContent(chunk.content),
+                projectName,
+            };
+            chunks.push({
+                id: generateDocumentId(sourcePath, index),
+                content: chunk.content,
+                metadata,
+                tokenCount: this.estimateTokenCount(chunk.content),
+            });
+        });
+        logger.debug('PDF document chunked', {
+            sourcePath,
+            totalChunks: chunks.length,
+        });
+        return chunks;
+    }
+    chunkPDFByPages(pages, sourcePath, documentName, projectName) {
+        const chunks = [];
+        const now = new Date().toISOString();
+        let currentChunk = null;
+        let currentSize = 0;
+        for (const page of pages) {
+            const pageContent = page.content.trim();
+            if (!pageContent)
+                continue;
+            const pageSize = pageContent.length;
+            // If this page alone exceeds chunk size, split it
+            if (pageSize > this.chunkSize) {
+                // Save current chunk if exists
+                if (currentChunk && currentChunk.content.trim()) {
+                    const chunkIndex = chunks.length;
+                    chunks.push({
+                        id: generateDocumentId(sourcePath, chunkIndex),
+                        content: currentChunk.content.trim(),
+                        metadata: {
+                            filePath: sourcePath,
+                            fileName: documentName,
+                            fileType: '.pdf',
+                            language: 'pdf',
+                            chunkIndex,
+                            totalChunks: -1, // Will update later
+                            startLine: currentChunk.startPage,
+                            endLine: currentChunk.endPage,
+                            createdAt: now,
+                            updatedAt: now,
+                            hash: hashContent(currentChunk.content),
+                            projectName,
+                        },
+                        tokenCount: this.estimateTokenCount(currentChunk.content),
+                    });
+                    currentChunk = null;
+                    currentSize = 0;
+                }
+                // Split the large page into smaller chunks
+                const subChunks = this.chunkLargePage(pageContent, page.pageNumber);
+                for (const subChunk of subChunks) {
+                    const chunkIndex = chunks.length;
+                    chunks.push({
+                        id: generateDocumentId(sourcePath, chunkIndex),
+                        content: subChunk.content,
+                        metadata: {
+                            filePath: sourcePath,
+                            fileName: documentName,
+                            fileType: '.pdf',
+                            language: 'pdf',
+                            chunkIndex,
+                            totalChunks: -1,
+                            startLine: subChunk.startPage,
+                            endLine: subChunk.endPage,
+                            createdAt: now,
+                            updatedAt: now,
+                            hash: hashContent(subChunk.content),
+                            projectName,
+                        },
+                        tokenCount: this.estimateTokenCount(subChunk.content),
+                    });
+                }
+                continue;
+            }
+            // Check if adding this page would exceed chunk size
+            if (currentChunk && currentSize + pageSize > this.chunkSize) {
+                // Save current chunk
+                const chunkIndex = chunks.length;
+                chunks.push({
+                    id: generateDocumentId(sourcePath, chunkIndex),
+                    content: currentChunk.content.trim(),
+                    metadata: {
+                        filePath: sourcePath,
+                        fileName: documentName,
+                        fileType: '.pdf',
+                        language: 'pdf',
+                        chunkIndex,
+                        totalChunks: -1,
+                        startLine: currentChunk.startPage,
+                        endLine: currentChunk.endPage,
+                        createdAt: now,
+                        updatedAt: now,
+                        hash: hashContent(currentChunk.content),
+                        projectName,
+                    },
+                    tokenCount: this.estimateTokenCount(currentChunk.content),
+                });
+                currentChunk = null;
+                currentSize = 0;
+            }
+            // Add page to current chunk
+            if (!currentChunk) {
+                currentChunk = {
+                    content: pageContent,
+                    startPage: page.pageNumber,
+                    endPage: page.pageNumber,
+                };
+                currentSize = pageSize;
+            }
+            else {
+                currentChunk.content += '\n\n' + pageContent;
+                currentChunk.endPage = page.pageNumber;
+                currentSize += pageSize + 2;
+            }
+        }
+        // Don't forget the last chunk
+        if (currentChunk && currentChunk.content.trim()) {
+            const chunkIndex = chunks.length;
+            chunks.push({
+                id: generateDocumentId(sourcePath, chunkIndex),
+                content: currentChunk.content.trim(),
+                metadata: {
+                    filePath: sourcePath,
+                    fileName: documentName,
+                    fileType: '.pdf',
+                    language: 'pdf',
+                    chunkIndex,
+                    totalChunks: -1,
+                    startLine: currentChunk.startPage,
+                    endLine: currentChunk.endPage,
+                    createdAt: now,
+                    updatedAt: now,
+                    hash: hashContent(currentChunk.content),
+                    projectName,
+                },
+                tokenCount: this.estimateTokenCount(currentChunk.content),
+            });
+        }
+        // Update totalChunks in all metadata
+        for (const chunk of chunks) {
+            chunk.metadata.totalChunks = chunks.length;
+        }
+        return chunks;
+    }
+    chunkLargePage(content, pageNumber) {
+        const chunks = [];
+        // Split on paragraph boundaries (double newline) or sentence boundaries
+        const paragraphs = content.split(/\n\n+/).filter(p => p.trim());
+        let currentContent = '';
+        let currentSize = 0;
+        for (const paragraph of paragraphs) {
+            const paraSize = paragraph.length;
+            if (paraSize > this.chunkSize) {
+                // Save current if exists
+                if (currentContent.trim()) {
+                    chunks.push({
+                        content: currentContent.trim(),
+                        startPage: pageNumber,
+                        endPage: pageNumber,
+                    });
+                    currentContent = '';
+                    currentSize = 0;
+                }
+                // Split large paragraph by sentences
+                const sentences = paragraph.match(/[^.!?]+[.!?]+/g) || [paragraph];
+                for (const sentence of sentences) {
+                    if (currentSize + sentence.length > this.chunkSize && currentContent.trim()) {
+                        chunks.push({
+                            content: currentContent.trim(),
+                            startPage: pageNumber,
+                            endPage: pageNumber,
+                        });
+                        currentContent = sentence;
+                        currentSize = sentence.length;
+                    }
+                    else {
+                        currentContent += ' ' + sentence;
+                        currentSize += sentence.length + 1;
+                    }
+                }
+            }
+            else if (currentSize + paraSize > this.chunkSize) {
+                // Save current chunk
+                if (currentContent.trim()) {
+                    chunks.push({
+                        content: currentContent.trim(),
+                        startPage: pageNumber,
+                        endPage: pageNumber,
+                    });
+                }
+                currentContent = paragraph;
+                currentSize = paraSize;
+            }
+            else {
+                currentContent += '\n\n' + paragraph;
+                currentSize += paraSize + 2;
+            }
+        }
+        // Add remaining content
+        if (currentContent.trim()) {
+            chunks.push({
+                content: currentContent.trim(),
+                startPage: pageNumber,
+                endPage: pageNumber,
+            });
+        }
+        return chunks;
+    }
+    chunkPDFText(content) {
+        // Use paragraph-based chunking for PDFs without page info
+        const chunks = [];
+        const paragraphs = content.split(/\n\n+/).filter(p => p.trim());
+        let currentContent = '';
+        let currentSize = 0;
+        let chunkCount = 0;
+        for (const paragraph of paragraphs) {
+            const paraSize = paragraph.length;
+            if (currentSize + paraSize > this.chunkSize && currentContent.trim()) {
+                chunks.push({
+                    content: currentContent.trim(),
+                    startPage: chunkCount + 1,
+                    endPage: chunkCount + 1,
+                });
+                chunkCount++;
+                // Keep overlap
+                const overlapContent = this.getTextOverlap(currentContent);
+                currentContent = overlapContent + '\n\n' + paragraph;
+                currentSize = currentContent.length;
+            }
+            else {
+                currentContent += (currentContent ? '\n\n' : '') + paragraph;
+                currentSize += paraSize + 2;
+            }
+        }
+        if (currentContent.trim()) {
+            chunks.push({
+                content: currentContent.trim(),
+                startPage: chunkCount + 1,
+                endPage: chunkCount + 1,
+            });
+        }
+        return chunks;
+    }
+    getTextOverlap(text) {
+        if (this.chunkOverlap <= 0)
+            return '';
+        // Get roughly chunkOverlap characters from the end
+        const words = text.split(/\s+/);
+        let overlapText = '';
+        let overlapSize = 0;
+        for (let i = words.length - 1; i >= 0; i--) {
+            const word = words[i];
+            if (overlapSize + word.length + 1 > this.chunkOverlap)
+                break;
+            overlapText = word + ' ' + overlapText;
+            overlapSize += word.length + 1;
+        }
+        return overlapText.trim();
     }
 }
 export const createChunker = (options) => {

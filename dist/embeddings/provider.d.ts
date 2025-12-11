@@ -16,6 +16,15 @@ export declare class OpenAIEmbeddingProvider implements EmbeddingProvider {
     private processBatch;
     generateEmbedding(text: string): Promise<number[]>;
 }
+export declare class VoyageEmbeddingProvider implements EmbeddingProvider {
+    private client;
+    private model;
+    private cache;
+    private queue;
+    constructor();
+    generateEmbeddings(request: EmbeddingRequest): Promise<EmbeddingResponse>;
+    generateEmbedding(text: string): Promise<number[]>;
+}
 export declare class ChromaEmbeddingProvider implements EmbeddingProvider {
     private client;
     private embeddingFunction;

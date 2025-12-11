@@ -45,7 +45,12 @@
       "**/*.bundle.js"
     ],
     "maxFileSize": 1048576,
-    "watchMode": false
+    "watchMode": false,
+    "pdf": {
+      "maxSizeMB": 50,
+      "timeoutMs": 60000,
+      "chunkSize": 1500
+    }
   },
   "agents": {
     "orchestrator": {

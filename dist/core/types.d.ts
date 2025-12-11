@@ -118,21 +118,21 @@ export declare const ConfigSchema: z.ZodObject<{
         persistDirectory?: string | undefined;
     }>;
     embeddings: z.ZodObject<{
-        provider: z.ZodDefault<z.ZodEnum<["openai", "anthropic", "local", "chroma"]>>;
+        provider: z.ZodDefault<z.ZodEnum<["openai", "anthropic", "local", "chroma", "voyage"]>>;
         model: z.ZodDefault<z.ZodString>;
         dimensions: z.ZodDefault<z.ZodNumber>;
         batchSize: z.ZodDefault<z.ZodNumber>;
         maxRetries: z.ZodDefault<z.ZodNumber>;
         retryDelay: z.ZodDefault<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
-        provider: "openai" | "anthropic" | "local" | "chroma";
+        provider: "openai" | "anthropic" | "local" | "chroma" | "voyage";
         model: string;
         dimensions: number;
         batchSize: number;
         maxRetries: number;
         retryDelay: number;
     }, {
-        provider?: "openai" | "anthropic" | "local" | "chroma" | undefined;
+        provider?: "openai" | "anthropic" | "local" | "chroma" | "voyage" | undefined;
         model?: string | undefined;
         dimensions?: number | undefined;
         batchSize?: number | undefined;
@@ -202,6 +202,19 @@ export declare const ConfigSchema: z.ZodObject<{
         excludePatterns: z.ZodArray<z.ZodString, "many">;
         maxFileSize: z.ZodDefault<z.ZodNumber>;
         watchMode: z.ZodDefault<z.ZodBoolean>;
+        pdf: z.ZodOptional<z.ZodObject<{
+            maxSizeMB: z.ZodDefault<z.ZodNumber>;
+            timeoutMs: z.ZodDefault<z.ZodNumber>;
+            chunkSize: z.ZodDefault<z.ZodNumber>;
+        }, "strip", z.ZodTypeAny, {
+            chunkSize: number;
+            maxSizeMB: number;
+            timeoutMs: number;
+        }, {
+            chunkSize?: number | undefined;
+            maxSizeMB?: number | undefined;
+            timeoutMs?: number | undefined;
+        }>>;
     }, "strip", z.ZodTypeAny, {
         chunkSize: number;
         chunkOverlap: number;
@@ -209,6 +222,11 @@ export declare const ConfigSchema: z.ZodObject<{
         excludePatterns: string[];
         maxFileSize: number;
         watchMode: boolean;
+        pdf?: {
+            chunkSize: number;
+            maxSizeMB: number;
+            timeoutMs: number;
+        } | undefined;
     }, {
         supportedExtensions: string[];
         excludePatterns: string[];
@@ -216,6 +234,11 @@ export declare const ConfigSchema: z.ZodObject<{
         chunkOverlap?: number | undefined;
         maxFileSize?: number | undefined;
         watchMode?: boolean | undefined;
+        pdf?: {
+            chunkSize?: number | undefined;
+            maxSizeMB?: number | undefined;
+            timeoutMs?: number | undefined;
+        } | undefined;
     }>;
     agents: z.ZodObject<{
         orchestrator: z.ZodObject<{
@@ -342,7 +365,7 @@ export declare const ConfigSchema: z.ZodObject<{
         persistDirectory: string;
     };
     embeddings: {
-        provider: "openai" | "anthropic" | "local" | "chroma";
+        provider: "openai" | "anthropic" | "local" | "chroma" | "voyage";
         model: string;
         dimensions: number;
         batchSize: number;
@@ -370,6 +393,11 @@ export declare const ConfigSchema: z.ZodObject<{
         excludePatterns: string[];
         maxFileSize: number;
         watchMode: boolean;
+        pdf?: {
+            chunkSize: number;
+            maxSizeMB: number;
+            timeoutMs: number;
+        } | undefined;
     };
     agents: {
         orchestrator: {
@@ -412,7 +440,7 @@ export declare const ConfigSchema: z.ZodObject<{
         persistDirectory?: string | undefined;
     };
     embeddings: {
-        provider?: "openai" | "anthropic" | "local" | "chroma" | undefined;
+        provider?: "openai" | "anthropic" | "local" | "chroma" | "voyage" | undefined;
         model?: string | undefined;
         dimensions?: number | undefined;
         batchSize?: number | undefined;
@@ -440,6 +468,11 @@ export declare const ConfigSchema: z.ZodObject<{
         chunkOverlap?: number | undefined;
         maxFileSize?: number | undefined;
         watchMode?: boolean | undefined;
+        pdf?: {
+            chunkSize?: number | undefined;
+            maxSizeMB?: number | undefined;
+            timeoutMs?: number | undefined;
+        } | undefined;
     };
     agents: {
         orchestrator: {

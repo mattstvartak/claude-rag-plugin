@@ -33,6 +33,18 @@ Always use this before: refactoring, adding features, fixing bugs, or explaining
                     items: { type: 'string' },
                     description: 'Optional: additional keywords to search for',
                 },
+                compact: {
+                    type: 'boolean',
+                    description: 'Return compact results (file paths only, no content) to reduce token usage. Useful for initial exploration before diving deeper.',
+                },
+                maxResults: {
+                    type: 'number',
+                    description: 'Maximum number of results to return (default: 15). Lower values reduce token usage.',
+                },
+                maxContentLength: {
+                    type: 'number',
+                    description: 'Maximum characters per result (default: unlimited). Use 300-500 for summaries.',
+                },
             },
             required: ['task'],
         },
@@ -55,6 +67,14 @@ Always use this before: refactoring, adding features, fixing bugs, or explaining
                     type: 'array',
                     items: { type: 'string' },
                     description: 'Filter by extensions (e.g., [".ts", ".py"])',
+                },
+                compact: {
+                    type: 'boolean',
+                    description: 'Return compact results (file paths and line numbers only, no content) to reduce token usage. Use this for initial exploration.',
+                },
+                maxContentLength: {
+                    type: 'number',
+                    description: 'Maximum characters per result content (default: unlimited). Use smaller values like 200-500 to reduce token usage.',
                 },
             },
             required: ['query'],
@@ -132,6 +152,50 @@ Always use this before: refactoring, adding features, fixing bugs, or explaining
             required: ['target'],
         },
     },
+    {
+        name: 'rag_index_pdf',
+        description: 'Index a PDF document from a URL into the RAG system. Useful for indexing rulebooks, documentation, manuals, and other reference materials. The PDF will be downloaded, parsed, chunked, and made searchable.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                url: {
+                    type: 'string',
+                    description: 'The URL of the PDF to download and index (must be a direct link to a PDF file)',
+                },
+                documentName: {
+                    type: 'string',
+                    description: 'Optional: A friendly name for the document (defaults to PDF title or filename)',
+                },
+                projectName: {
+                    type: 'string',
+                    description: 'Optional: Project name to associate with this PDF',
+                },
+                forceReindex: {
+                    type: 'boolean',
+                    description: 'Optional: Force re-indexing even if the PDF was already indexed',
+                },
+                maxSizeMB: {
+                    type: 'number',
+                    description: 'Optional: Maximum PDF size in MB (default: 50MB)',
+                },
+            },
+            required: ['url'],
+        },
+    },
+    {
+        name: 'rag_remove_pdf',
+        description: 'Remove a previously indexed PDF from the RAG system by its source URL.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                url: {
+                    type: 'string',
+                    description: 'The URL of the PDF to remove from the index',
+                },
+            },
+            required: ['url'],
+        },
+    },
 ];
 // Prompt definitions
 const PROMPTS = [
@@ -204,6 +268,9 @@ async function createMCPServer() {
                     const task = args?.['task'] || '';
                     const files = args?.['files'] || [];
                     const keywords = args?.['keywords'] || [];
+                    const compact = args?.['compact'];
+                    const maxResults = args?.['maxResults'] || 15;
+                    const maxContentLength = args?.['maxContentLength'];
                     // Build comprehensive search query
                     const searchQueries = [task, ...keywords];
                     if (files.length > 0) {
@@ -211,7 +278,7 @@ async function createMCPServer() {
                     }
                     // Get relevant context from multiple angles
                     const contextResults = await Promise.all([
-                        retriever.retrieve({ query: task, topK: 8 }),
+                        retriever.retrieve({ query: task, topK: Math.min(8, maxResults) }),
                         ...keywords.slice(0, 3).map(kw => retriever.retrieve({ query: kw, topK: 3 })),
                     ]);
                     // Deduplicate and merge results
@@ -221,17 +288,40 @@ async function createMCPServer() {
                             return false;
                         seenIds.add(r.document.id);
                         return true;
-                    }).sort((a, b) => b.score - a.score).slice(0, 15);
+                    }).sort((a, b) => b.score - a.score).slice(0, maxResults);
+                    // Compact mode: minimal token usage
+                    if (compact) {
+                        return {
+                            content: [{
+                                    type: 'text',
+                                    text: JSON.stringify({
+                                        task,
+                                        relevantFiles: allResults.map(r => ({
+                                            file: r.document.metadata.filePath,
+                                            lines: `${r.document.metadata.startLine || 1}-${r.document.metadata.endLine || 'end'}`,
+                                            relevance: (r.score * 100).toFixed(0) + '%',
+                                        })),
+                                        summary: `Found ${allResults.length} relevant code sections for task: "${task}"`,
+                                        hint: 'Use Read tool to view specific files, or call rag_context again without compact mode for full content.',
+                                    }, null, 2),
+                                }],
+                        };
+                    }
                     // Format context for Claude
                     const contextOutput = {
                         task,
-                        relevantCode: allResults.map(r => ({
-                            file: r.document.metadata.filePath,
-                            lines: `${r.document.metadata.startLine || 1}-${r.document.metadata.endLine || 'end'}`,
-                            relevance: (r.score * 100).toFixed(1) + '%',
-                            language: r.document.metadata.language || 'unknown',
-                            content: r.document.content,
-                        })),
+                        relevantCode: allResults.map(r => {
+                            const content = maxContentLength
+                                ? r.document.content.slice(0, maxContentLength) + (r.document.content.length > maxContentLength ? '...' : '')
+                                : r.document.content;
+                            return {
+                                file: r.document.metadata.filePath,
+                                lines: `${r.document.metadata.startLine || 1}-${r.document.metadata.endLine || 'end'}`,
+                                relevance: (r.score * 100).toFixed(1) + '%',
+                                language: r.document.metadata.language || 'unknown',
+                                content,
+                            };
+                        }),
                         summary: `Found ${allResults.length} relevant code sections for task: "${task}"`,
                         recommendations: [
                             'Review the code patterns used in similar files',
@@ -251,11 +341,30 @@ async function createMCPServer() {
                     const query = args?.['query'];
                     const topK = args?.['topK'] || 10;
                     const fileTypes = args?.['fileTypes'];
+                    const compact = args?.['compact'];
+                    const maxContentLength = args?.['maxContentLength'];
                     const results = await retriever.retrieve({
                         query,
                         topK,
                         ...(fileTypes && { filters: { fileType: fileTypes } }),
                     });
+                    // Compact mode: only return file paths and line numbers (minimal tokens)
+                    if (compact) {
+                        return {
+                            content: [{
+                                    type: 'text',
+                                    text: JSON.stringify({
+                                        results: results.map(r => ({
+                                            file: r.document.metadata.filePath,
+                                            lines: `${r.document.metadata.startLine}-${r.document.metadata.endLine}`,
+                                            score: (r.score * 100).toFixed(0) + '%',
+                                        })),
+                                        totalResults: results.length,
+                                        hint: 'Use Read tool to view specific files, or search again without compact mode for content.',
+                                    }, null, 2),
+                                }],
+                        };
+                    }
                     return {
                         content: [{
                                 type: 'text',
@@ -264,7 +373,9 @@ async function createMCPServer() {
                                         filePath: r.document.metadata.filePath,
                                         score: r.score,
                                         lines: `${r.document.metadata.startLine}-${r.document.metadata.endLine}`,
-                                        content: r.document.content,
+                                        content: maxContentLength
+                                            ? r.document.content.slice(0, maxContentLength) + (r.document.content.length > maxContentLength ? '...' : '')
+                                            : r.document.content,
                                     })),
                                     totalResults: results.length,
                                 }, null, 2),
@@ -406,6 +517,81 @@ async function createMCPServer() {
                                         snippet: r.document.content.slice(0, 300),
                                     })),
                                     count: dependencies.length,
+                                }, null, 2),
+                            }],
+                    };
+                }
+                case 'rag_index_pdf': {
+                    const url = args?.['url'];
+                    const documentName = args?.['documentName'];
+                    const projectName = args?.['projectName'];
+                    const forceReindex = args?.['forceReindex'];
+                    const maxSizeMB = args?.['maxSizeMB'];
+                    if (!url) {
+                        return {
+                            content: [{
+                                    type: 'text',
+                                    text: JSON.stringify({ error: 'URL is required' }),
+                                }],
+                            isError: true,
+                        };
+                    }
+                    // Validate URL format
+                    try {
+                        new URL(url);
+                    }
+                    catch {
+                        return {
+                            content: [{
+                                    type: 'text',
+                                    text: JSON.stringify({ error: 'Invalid URL format' }),
+                                }],
+                            isError: true,
+                        };
+                    }
+                    const result = await ingestionService.ingestPDFFromURL(url, {
+                        documentName,
+                        projectName,
+                        forceReindex,
+                        maxSizeMB,
+                    });
+                    return {
+                        content: [{
+                                type: 'text',
+                                text: JSON.stringify({
+                                    success: result.success,
+                                    documentName: result.documentName,
+                                    sourceUrl: result.sourceUrl,
+                                    stats: {
+                                        chunks: result.chunks,
+                                        pages: result.pages,
+                                        textLength: result.textLength,
+                                    },
+                                    metadata: result.metadata,
+                                    ...(result.error && { error: result.error }),
+                                }, null, 2),
+                            }],
+                        ...(result.error && { isError: true }),
+                    };
+                }
+                case 'rag_remove_pdf': {
+                    const url = args?.['url'];
+                    if (!url) {
+                        return {
+                            content: [{
+                                    type: 'text',
+                                    text: JSON.stringify({ error: 'URL is required' }),
+                                }],
+                            isError: true,
+                        };
+                    }
+                    await ingestionService.removePDF(url);
+                    return {
+                        content: [{
+                                type: 'text',
+                                text: JSON.stringify({
+                                    success: true,
+                                    message: `PDF removed from index: ${url}`,
                                 }, null, 2),
                             }],
                     };

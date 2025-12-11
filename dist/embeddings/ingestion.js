@@ -9,6 +9,7 @@ import { createChildLogger } from '../utils/logger.js';
 import { hashContent } from '../utils/hashing.js';
 import { DocumentChunker } from './chunker.js';
 import { getEmbeddingProvider } from './provider.js';
+import { getPDFFetcher } from '../fetchers/pdf-fetcher.js';
 const logger = createChildLogger('ingestion');
 export class DocumentIngestionService {
     chunker;
@@ -182,6 +183,144 @@ export class DocumentIngestionService {
             this.watcher.close();
             this.watcher = null;
             logger.info('File watcher stopped');
+        }
+    }
+    /**
+     * Ingest a PDF from a URL
+     */
+    async ingestPDFFromURL(url, options = {}) {
+        logger.info('Starting PDF ingestion from URL', { url });
+        const vectorStore = getVectorStore();
+        await vectorStore.initialize();
+        const embeddingProvider = getEmbeddingProvider();
+        try {
+            // Fetch and parse the PDF
+            const pdfFetcher = getPDFFetcher();
+            const pdfContent = await pdfFetcher.fetchAndParse(url, {
+                maxSizeMB: options.maxSizeMB,
+                timeout: options.timeout,
+            });
+            // Generate a document name
+            const documentName = options.documentName ||
+                pdfContent.metadata.title ||
+                this.extractNameFromURL(url);
+            // Use URL as the "file path" for storage
+            const sourcePath = `pdf://${url}`;
+            // Check if already indexed (unless force reindex)
+            if (!options.forceReindex) {
+                const existingDocs = await vectorStore.getDocumentsByFilePath(sourcePath);
+                if (existingDocs.length > 0 && existingDocs[0]?.metadata.hash === pdfContent.hash) {
+                    logger.info('PDF already indexed and unchanged', { url });
+                    return {
+                        success: true,
+                        documentName,
+                        sourceUrl: url,
+                        chunks: existingDocs.length,
+                        pages: pdfContent.metadata.pageCount,
+                        textLength: pdfContent.text.length,
+                        metadata: {
+                            title: pdfContent.metadata.title,
+                            author: pdfContent.metadata.author,
+                            pageCount: pdfContent.metadata.pageCount,
+                        },
+                    };
+                }
+            }
+            // Delete existing documents for this URL
+            await vectorStore.deleteByFilePath(sourcePath);
+            // Chunk the PDF content
+            const chunks = this.chunker.chunkPDFDocument(pdfContent.text, sourcePath, documentName, options.projectName, { pages: pdfContent.pages });
+            if (chunks.length === 0) {
+                return {
+                    success: false,
+                    documentName,
+                    sourceUrl: url,
+                    chunks: 0,
+                    pages: pdfContent.metadata.pageCount,
+                    textLength: pdfContent.text.length,
+                    error: 'No content could be extracted from the PDF',
+                };
+            }
+            // Update metadata with PDF-specific info
+            for (const chunk of chunks) {
+                chunk.metadata.hash = pdfContent.hash;
+                // Store URL info in tags for easy querying
+                chunk.metadata.tags = [
+                    'pdf',
+                    `source:${url}`,
+                    ...(pdfContent.metadata.title ? [`title:${pdfContent.metadata.title}`] : []),
+                    ...(pdfContent.metadata.author ? [`author:${pdfContent.metadata.author}`] : []),
+                ];
+            }
+            // Generate embeddings
+            const embeddings = await embeddingProvider.generateEmbeddings({
+                texts: chunks.map((c) => c.content),
+            });
+            // Store in vector database
+            await vectorStore.addDocuments(chunks.map((c) => ({
+                id: c.id,
+                content: c.content,
+                metadata: c.metadata,
+            })), embeddings.embeddings);
+            logger.info('PDF ingested successfully', {
+                url,
+                documentName,
+                chunks: chunks.length,
+                pages: pdfContent.metadata.pageCount,
+            });
+            return {
+                success: true,
+                documentName,
+                sourceUrl: url,
+                chunks: chunks.length,
+                pages: pdfContent.metadata.pageCount,
+                textLength: pdfContent.text.length,
+                metadata: {
+                    title: pdfContent.metadata.title,
+                    author: pdfContent.metadata.author,
+                    pageCount: pdfContent.metadata.pageCount,
+                },
+            };
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            logger.error('Failed to ingest PDF from URL', { url, error: errorMessage });
+            return {
+                success: false,
+                documentName: options.documentName || this.extractNameFromURL(url),
+                sourceUrl: url,
+                chunks: 0,
+                pages: 0,
+                textLength: 0,
+                error: errorMessage,
+            };
+        }
+    }
+    /**
+     * Remove an indexed PDF by its source URL
+     */
+    async removePDF(url) {
+        const sourcePath = `pdf://${url}`;
+        const vectorStore = getVectorStore();
+        await vectorStore.initialize();
+        await vectorStore.deleteByFilePath(sourcePath);
+        logger.info('PDF removed from index', { url });
+    }
+    extractNameFromURL(url) {
+        try {
+            const parsedUrl = new URL(url);
+            const pathname = parsedUrl.pathname;
+            const filename = basename(pathname);
+            // Remove .pdf extension if present
+            const nameWithoutExt = filename.replace(/\.pdf$/i, '');
+            // Clean up URL encoding
+            const decoded = decodeURIComponent(nameWithoutExt);
+            // Replace underscores and dashes with spaces
+            const cleaned = decoded.replace(/[-_]+/g, ' ');
+            return cleaned || 'Untitled PDF';
+        }
+        catch {
+            return 'Untitled PDF';
         }
     }
 }

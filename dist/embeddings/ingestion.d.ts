@@ -15,6 +15,27 @@ interface IngestionOptions {
     forceReindex?: boolean;
     onProgress?: (stats: IngestionStats) => void;
 }
+interface PDFIngestionOptions {
+    projectName?: string;
+    documentName?: string;
+    forceReindex?: boolean;
+    maxSizeMB?: number;
+    timeout?: number;
+}
+interface PDFIngestionResult {
+    success: boolean;
+    documentName: string;
+    sourceUrl: string;
+    chunks: number;
+    pages: number;
+    textLength: number;
+    metadata?: {
+        title?: string;
+        author?: string;
+        pageCount: number;
+    };
+    error?: string;
+}
 export declare class DocumentIngestionService {
     private chunker;
     private queue;
@@ -29,6 +50,15 @@ export declare class DocumentIngestionService {
     removeFile(filePath: string): Promise<void>;
     startWatching(directoryPath: string, options?: IngestionOptions): void;
     stopWatching(): void;
+    /**
+     * Ingest a PDF from a URL
+     */
+    ingestPDFFromURL(url: string, options?: PDFIngestionOptions): Promise<PDFIngestionResult>;
+    /**
+     * Remove an indexed PDF by its source URL
+     */
+    removePDF(url: string): Promise<void>;
+    private extractNameFromURL;
 }
 export declare const getIngestionService: () => DocumentIngestionService;
 export {};
